@@ -15,7 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var overlay: OverlayWindow!
     var settingsWindow: NSWindow?
     var statusItem: NSStatusItem!
-    var overlayVisible = true
+    var overlayVisible = UserDefaults.standard.object(forKey: "overlayVisible") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(overlayVisible, forKey: "overlayVisible") }
+    }
 
     // MARK: 시작
 
@@ -48,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         overlay.title = "LiveSubtitle"
         overlay.contentView = NSHostingView(rootView: SubtitleView(model: model))
         overlay.setFrameAutosaveName("SubtitleOverlay")   // 위치·크기 저장
-        overlay.orderFrontRegardless()
+        if overlayVisible { overlay.orderFrontRegardless() }
     }
 
     @objc func toggleOverlay(_ sender: Any?) {

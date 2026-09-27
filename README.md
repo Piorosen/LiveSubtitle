@@ -5,12 +5,21 @@
 번역은 Apple **기기 내 번역(Translation 프레임워크)** 입니다. API 키나 인터넷이 필요 없습니다 (최초 1회 모델 다운로드만).
 엔진별 정확도·속도·전력 실측은 [EVAL.md](EVAL.md) 참고.
 
-## 실행
+## 설치 (배포판)
+
+[Releases](https://github.com/Piorosen/LiveSubtitle/releases)에서 최신 `LiveSubtitle-x.y.z-macos-arm64.dmg`를 받아 열고, 앱을 Applications로 드래그합니다.
+
+- 요구사항: Apple Silicon 맥, macOS 15 이상 (Apple 내장 인식 엔진은 macOS 26)
+- 공증되지 않은 빌드는 처음 열 때 경고가 뜹니다. **시스템 설정 > 개인정보 보호 및 보안 > 그래도 열기**, 또는 `xattr -dr com.apple.quarantine /Applications/LiveSubtitle.app`
+- 첫 실행은 인터넷 연결 상태에서 (번역 언어 + Parakeet 모델 다운로드)
+
+## 소스에서 실행
 
 ```zsh
-cd LiveSubtitle
+git clone https://github.com/Piorosen/LiveSubtitle.git && cd LiveSubtitle
 ./run.sh          # 빌드 후 실행 (= ./build.sh && open build/LiveSubtitle.app)
 ```
+Xcode 26 이상이 필요합니다.
 
 처음 실행 시 순서대로 뜨는 창:
 1. **마이크 권한** → 허용
@@ -22,11 +31,17 @@ cd LiveSubtitle
 
 ## 사용법
 
-- 자막 창은 항상 다른 창 위에 뜨고, **배경을 잡고 드래그**하면 이동, 가장자리를 끌면 크기 조절.
-- 마우스를 올리면 위에 툴바가 나타남: 인식/번역 상태 · **엔진 선택(CPU 아이콘)** · 모델 받기 · 언어 설정 · 일시정지 · 영어 원문 표시(EN) · 글자 크기 · 투명도 · 지우기 · 종료
-- **엔진 선택 창 (⌘,)**: Parakeet v2 / Parakeet Ultra / Apple 내장 중 선택. 각 엔진의 모델 크기·정확도·속도·전력 실측 표가 함께 표시되고, Parakeet는 지연↔정확도 프리셋(정확/균형/빠름)을 고를 수 있음. 선택은 저장됨.
-- 단축키: `⌘=` 글자 크게, `⌘-` 작게, `⌘E` 영어 원문 표시 전환, `⌘P` 일시정지/재개, `⌘K` 자막 지우기, `⌘,` 엔진 선택, `⌘Q` 종료
-- 큰 흰 글씨 = 현재 문장 한국어, 노란 작은 글씨 = 영어 원문, 위 흐린 글씨 = 직전 문장
+앱은 **메뉴바**에서 동작하며 Dock에는 나타나지 않습니다.
+
+- **메뉴바 아이콘(말풍선)**: 현재 상태·CPU·메모리, 자막 창 보이기/숨기기, 일시정지, 자막 지우기, 엔진 빠른 전환, 설정, 종료
+- **자막 창**: 항상 다른 창 위에 뜨고, 배경을 잡고 드래그하면 이동, 가장자리를 끌면 크기 조절. 마우스를 올리면 상태 줄과 일시정지·설정·숨기기 버튼이 나타남. 큰 흰 글씨 = 현재 문장 한국어, 노란 작은 글씨 = 영어 원문, 위 흐린 글씨 = 직전 문장
+- **설정 (⌘,)**
+  - 엔진: Parakeet v2 / Parakeet Ultra / Apple 내장 선택, 지연↔정확도 프리셋(정확/균형/빠름), 번역 상태, 엔진별 실측 비교표
+  - 자막: 글자 크기, 배경 불투명도, 영어 원문·직전 문장 표시, 창 위치 초기화
+  - 리소스: 이 앱의 CPU·메모리, 모델 캐시 용량, 시스템 CPU·열 상태·저전력 모드·배터리, 세션 통계(문장 수, 번역 지연), 로그 열기
+  - 정보: 버전, 사용 구성요소·라이선스, 단축키
+- 모든 설정(엔진, 프리셋, 글자, 투명도, 표시 옵션, 창 위치·크기, 숨김 상태)은 자동 저장되어 다음 실행 때 복원됩니다.
+- 단축키: `⌘,` 설정, `⌘H` 자막 창 보이기/숨기기, `⌘P` 일시정지/재개, `⌘K` 자막 지우기, `⌘=`/`⌘-` 글자 크기, `⌘E` 영어 원문, `⌘Q` 종료
 
 ## 팁
 
@@ -40,14 +55,26 @@ cd LiveSubtitle
 
 | 파일 | 역할 |
 |---|---|
-| `Sources/main.swift` | 앱 진입점, 테두리 없는 반투명 항상-위 창, 메뉴/단축키 |
+| `Sources/main.swift` | 앱 진입점, 메뉴바 아이템, 자막 오버레이 창, 설정 창, 단축키 |
+| `Sources/SettingsView.swift` | 설정 창 (엔진 / 자막 / 리소스 / 정보 탭) |
+| `Sources/ResourceMonitor.swift` | CPU·메모리·열 상태·배터리 표본화 |
 | `Sources/ParakeetEngine.swift` | Parakeet TDT CoreML 스트리밍 인식 (기본, FluidAudio) |
-| `Sources/EngineCatalog.swift`, `EngineMeasurements.swift`, `EnginePickerView.swift` | 엔진 선택 UI와 실측 비교표 |
+| `Sources/EngineCatalog.swift`, `EngineMeasurements.swift` | 엔진 목록과 실측 비교표 데이터 |
 | `Sources/AnalyzerEngine.swift` | macOS 26 SpeechAnalyzer 온디바이스 인식 (대안) |
 | `Sources/SpeechEngine.swift` | 구형 SFSpeechRecognizer 폴백 (macOS 15, 받아쓰기 필요) |
 | `Sources/FileLog.swift` | `~/Library/Logs/LiveSubtitle.log` 기록 |
 | `Sources/SubtitleModel.swift` | 자막 상태, 번역 작업 큐 (오래된 부분 결과는 건너뜀) |
-| `Sources/SubtitleView.swift` | SwiftUI 자막 화면 + 호버 툴바 + 번역 세션 |
+| `Sources/SubtitleView.swift` | 자막 오버레이 화면 + 번역 세션 |
 | `Info.plist` | 마이크/음성 인식 사용 설명 (권한 창 문구) |
 | `Package.swift`, `build.sh` / `run.sh` | SwiftPM 빌드(FluidAudio 의존) → `.app` 번들 → ad-hoc 서명 |
 | `eval/`, `EVAL.md` | 엔진 평가 도구(WER, 스트리밍, 전력)와 결과 |
+
+## 배포 자동화 (GitHub Actions)
+
+- `ci.yml`: main 푸시·PR 때 macOS 러너에서 빌드하고 `.app`을 아티팩트로 올립니다.
+- `release.yml`: `v1.2.3` 형태의 태그를 푸시하면 버전을 Info.plist에 기록해 빌드하고, zip·DMG·SHA256을 만들어 GitHub Release를 생성합니다.
+  - 저장소 secrets에 `MACOS_CERT_P12_BASE64`, `MACOS_CERT_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`를 넣으면 Developer ID 서명과 공증까지 자동으로 수행합니다. 없으면 ad-hoc 서명 빌드를 올립니다.
+
+```zsh
+git tag v1.0.0 && git push origin v1.0.0   # → Release 생성
+```
