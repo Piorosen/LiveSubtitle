@@ -101,6 +101,7 @@ struct SubtitleTab: View {
             Section("표시") {
                 Slider(value: $model.fontSize, in: 16...80, step: 1) { Text("글자 크기  \(Int(model.fontSize))pt") }
                 Slider(value: $model.opacity, in: 0.1...0.95) { Text("배경 불투명도  \(Int(model.opacity * 100))%") }
+                Toggle("자막 창 위 컨트롤 줄 항상 표시 (끄면 마우스를 올릴 때만)", isOn: $model.alwaysShowControls)
                 Toggle("영어 원문 함께 표시 (⌘E)", isOn: $model.showEnglish)
                 Toggle("직전 문장 흐리게 표시", isOn: $model.showPrevious)
             }
@@ -109,7 +110,7 @@ struct SubtitleTab: View {
                     Button("자막 창 위치·크기 초기화") { app.resetOverlayPosition(nil) }
                     Button("자막 지우기 (⌘K)") { model.clear() }
                 }
-                Text("자막 창은 배경을 잡고 드래그해 옮기고, 가장자리를 끌어 크기를 바꿀 수 있습니다. 위치는 자동 저장됩니다. 메뉴바 아이콘에서 숨기거나 다시 표시할 수 있습니다 (⌘H).")
+                Text("자막 창은 배경을 잡고 드래그해 옮기고, 가장자리를 끌어 크기를 바꿀 수 있습니다. 위치는 자동 저장됩니다. 숨기거나 다시 표시: 메뉴바 '자막' 아이콘, 또는 어디서나 ⌥⌘L.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -177,7 +178,7 @@ struct AboutTab: View {
                 LabeledContent("평가", value: "LibriSpeech test-other, powermetrics · 자세한 내용은 EVAL.md")
             }
             Section("단축키") {
-                Text("⌘,  설정      ⌘H  자막 창 보이기/숨기기      ⌘P  일시정지/재개      ⌘K  자막 지우기\n⌘=  글자 크게      ⌘-  글자 작게      ⌘E  영어 원문 표시      ⌘Q  종료")
+                Text("⌥⌘L  자막 창 보이기/숨기기 (전역, 어떤 앱에서나)\n⌘,  설정      ⌘P  일시정지/재개      ⌘K  자막 지우기      ⌘=  글자 크게      ⌘-  글자 작게      ⌘E  영어 원문 표시      ⌘Q  종료")
                     .font(.system(size: 12, design: .monospaced))
             }
         }

@@ -37,9 +37,10 @@ struct SubtitleView: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 30)
-            .padding(.vertical, 18)
+            .padding(.top, model.alwaysShowControls ? 40 : 18)
+            .padding(.bottom, 18)
 
-            if hovering { statusBar.transition(.opacity) }
+            if hovering || model.alwaysShowControls { statusBar.transition(.opacity) }
         }
         .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { hovering = h } }
         .translationTask(model.translationConfig) { session in
@@ -58,7 +59,7 @@ struct SubtitleView: View {
             Spacer()
             pill(model.paused ? "play.fill" : "pause.fill", model.paused ? "재개" : "일시정지") { model.togglePause() }
             pill("gearshape", "설정 (⌘,)") { (NSApp.delegate as? AppDelegate)?.showSettings(nil) }
-            pill("eye.slash", "자막 창 숨기기 (메뉴바에서 다시 표시)") { (NSApp.delegate as? AppDelegate)?.toggleOverlay(nil) }
+            pill("eye.slash", "자막 창 숨기기 — 다시 보려면 메뉴바 '자막' 아이콘 또는 ⌥⌘L") { (NSApp.delegate as? AppDelegate)?.toggleOverlay(nil) }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(Color.black.opacity(0.7), in: Capsule())

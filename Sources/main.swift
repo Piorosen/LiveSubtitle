@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Carbon.HIToolbox
 
 /// 테두리 없는 창도 키 입력(⌘, 등)을 받을 수 있게 하는 서브클래스
 final class OverlayWindow: NSWindow {
@@ -29,7 +30,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.mainMenu = makeMainMenu()             // 창이 활성일 때 단축키 동작용
         resources.start()
         model.start()
+        registerGlobalHotKey()
         installDebugHooks()
+    }
+
+    // MARK: 전역 단축키 ⌥⌘L — 어떤 앱이 활성이어도 자막 창 보이기/숨기기 (메뉴바 아이콘이 노치에 가려져도 복구 가능)
+
+    private var hotKeyRef: EventHotKeyRef?
+    private func registerGlobalHotKey() {
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ -> OSStatus in
+            DispatchQueue.main.async { (NSApp.delegate as? AppDelegate)?.toggleOverlay(nil) }
+            return noErr
+        }, 1, &spec, nil, nil)
+        let hotKeyID = EventHotKeyID(signature: OSType(0x4C53_5542), id: 1)   // "LSUB"
+        RegisterEventHotKey(UInt32(kVK_ANSI_L), UInt32(cmdKey | optionKey), hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -70,6 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func makeStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.behavior = []          // ⌘드래그로 제거되지 않음
+        statusItem.isVisible = true
+        statusItem.autosaveName = "LiveSubtitleStatus"
         updateStatusIcon()
         let menu = NSMenu()
         menu.delegate = self
@@ -81,7 +99,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let b = statusItem?.button else { return }
         b.image = NSImage(systemSymbolName: overlayVisible ? "captions.bubble.fill" : "captions.bubble", accessibilityDescription: "LiveSubtitle")
         b.image?.isTemplate = true
-        b.toolTip = overlayVisible ? "LiveSubtitle" : "LiveSubtitle — 자막 창 숨김 (클릭해서 다시 표시)"
+        b.imagePosition = .imageLeading
+        b.title = overlayVisible ? " 자막" : " 자막(숨김)"
+        b.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        b.toolTip = overlayVisible ? "LiveSubtitle — ⌥⌘L 로 자막 창 숨기기/보이기" : "LiveSubtitle — 자막 창 숨김. 클릭 또는 ⌥⌘L 로 다시 표시"
     }
 
     /// 메뉴를 열 때마다 현재 상태로 다시 구성
@@ -89,10 +110,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
 
         // 맨 위: 자막 창 보이기/숨기기 (숨겨져 있으면 굵게 강조)
-        let show = NSMenuItem(title: overlayVisible ? "자막 창 숨기기" : "자막 창 보이기", action: #selector(toggleOverlay(_:)), keyEquivalent: "h")
+        let show = NSMenuItem(title: overlayVisible ? "자막 창 숨기기  (⌥⌘L)" : "자막 창 보이기  (⌥⌘L)", action: #selector(toggleOverlay(_:)), keyEquivalent: "")
         show.target = self
         if !overlayVisible {
-            show.attributedTitle = NSAttributedString(string: "자막 창 보이기", attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)])
+            show.attributedTitle = NSAttributedString(string: "자막 창 보이기  (⌥⌘L)", attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)])
         }
         menu.addItem(show)
         menu.addItem(.separator())

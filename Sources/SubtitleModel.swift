@@ -40,6 +40,9 @@ final class SubtitleModel: ObservableObject {
     @Published var showEnglish: Bool = UserDefaults.standard.object(forKey: "showEnglish") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showEnglish, forKey: "showEnglish") }
     }
+    @Published var alwaysShowControls: Bool = UserDefaults.standard.object(forKey: "alwaysShowControls") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(alwaysShowControls, forKey: "alwaysShowControls") }
+    }
     @Published var showPrevious: Bool = UserDefaults.standard.object(forKey: "showPrevious") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showPrevious, forKey: "showPrevious") }
     }
