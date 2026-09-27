@@ -15,8 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var overlay: OverlayWindow!
     var settingsWindow: NSWindow?
     var statusItem: NSStatusItem!
-    var overlayVisible = UserDefaults.standard.object(forKey: "overlayVisible") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(overlayVisible, forKey: "overlayVisible") }
+    /// 숨김 상태는 세션 동안만 유지. 앱을 켜면 항상 자막 창이 보임 (숨긴 채로 시작해 헷갈리는 일 방지)
+    var overlayVisible = true {
+        didSet { updateStatusIcon() }
     }
 
     // MARK: 시작
@@ -50,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         overlay.title = "LiveSubtitle"
         overlay.contentView = NSHostingView(rootView: SubtitleView(model: model))
         overlay.setFrameAutosaveName("SubtitleOverlay")   // 위치·크기 저장
-        if overlayVisible { overlay.orderFrontRegardless() }
+        overlay.orderFrontRegardless()
     }
 
     @objc func toggleOverlay(_ sender: Any?) {
@@ -69,18 +70,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func makeStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let b = statusItem.button {
-            b.image = NSImage(systemSymbolName: "captions.bubble.fill", accessibilityDescription: "LiveSubtitle")
-            b.image?.isTemplate = true
-        }
+        updateStatusIcon()
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
     }
 
+    /// 자막 창이 보이면 채워진 말풍선, 숨겨져 있으면 빈 말풍선
+    private func updateStatusIcon() {
+        guard let b = statusItem?.button else { return }
+        b.image = NSImage(systemSymbolName: overlayVisible ? "captions.bubble.fill" : "captions.bubble", accessibilityDescription: "LiveSubtitle")
+        b.image?.isTemplate = true
+        b.toolTip = overlayVisible ? "LiveSubtitle" : "LiveSubtitle — 자막 창 숨김 (클릭해서 다시 표시)"
+    }
+
     /// 메뉴를 열 때마다 현재 상태로 다시 구성
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+
+        // 맨 위: 자막 창 보이기/숨기기 (숨겨져 있으면 굵게 강조)
+        let show = NSMenuItem(title: overlayVisible ? "자막 창 숨기기" : "자막 창 보이기", action: #selector(toggleOverlay(_:)), keyEquivalent: "h")
+        show.target = self
+        if !overlayVisible {
+            show.attributedTitle = NSAttributedString(string: "자막 창 보이기", attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)])
+        }
+        menu.addItem(show)
+        menu.addItem(.separator())
 
         let dot = model.paused ? "⏸" : (model.isListening ? "●" : "○")
         let engineLine = "\(dot) \(model.paused ? "일시정지" : model.status)"
@@ -89,8 +104,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                             action: nil, keyEquivalent: ""); s2.isEnabled = false; menu.addItem(s2)
         menu.addItem(.separator())
 
-        let show = NSMenuItem(title: overlayVisible ? "자막 창 숨기기" : "자막 창 보이기", action: #selector(toggleOverlay(_:)), keyEquivalent: "h")
-        show.target = self; menu.addItem(show)
         let pause = NSMenuItem(title: model.paused ? "재개" : "일시정지", action: #selector(togglePause(_:)), keyEquivalent: "p")
         pause.target = self; menu.addItem(pause)
         let clear = NSMenuItem(title: "자막 지우기", action: #selector(clearLines(_:)), keyEquivalent: "k")
