@@ -1,0 +1,11 @@
+.build/
+build/
+*.xcodeproj
+*.xcworkspace
+.DS_Store
+.swiftpm/
+icon/LiveSubtitle.iconset/
+eval/asreval/.build/
+eval/.venv/
+*.wav
+*.log

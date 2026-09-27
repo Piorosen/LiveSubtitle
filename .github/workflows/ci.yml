@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: Build (macOS, Apple Silicon)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: |
+          ls /Applications | grep -i xcode || true
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          xcodebuild -version
+          swift --version
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+      - name: Build app bundle
+        run: ./build.sh
+      - name: Sanity check bundle
+        run: |
+          ls -la build/LiveSubtitle.app/Contents/MacOS build/LiveSubtitle.app/Contents/Resources
+          plutil -lint build/LiveSubtitle.app/Contents/Info.plist
+          codesign -dv build/LiveSubtitle.app
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiveSubtitle.app
+          path: build/LiveSubtitle.app
+          if-no-files-found: error

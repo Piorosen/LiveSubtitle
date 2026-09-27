@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>                <string>LiveSubtitle</string>
+    <key>CFBundleDisplayName</key>         <string>LiveSubtitle</string>
+    <key>CFBundleIdentifier</key>          <string>party.udon.livesubtitle</string>
+    <key>CFBundleExecutable</key>          <string>LiveSubtitle</string>
+    <key>CFBundlePackageType</key>         <string>APPL</string>
+    <key>CFBundleVersion</key>             <string>1</string>
+    <key>CFBundleShortVersionString</key>  <string>1.0</string>
+    <key>LSMinimumSystemVersion</key>      <string>15.0</string>
+    <key>NSHighResolutionCapable</key>     <true/>
+    <key>LSUIElement</key>                 <true/>
+    <key>CFBundleIconFile</key>             <string>LiveSubtitle</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>연설자의 음성을 듣고 실시간 자막을 만들기 위해 마이크가 필요합니다.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>영어 음성을 텍스트로 변환하기 위해 음성 인식이 필요합니다.</string>
+</dict>
+</plist>
