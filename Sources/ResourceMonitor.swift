@@ -119,7 +119,8 @@ final class ResourceMonitor: ObservableObject {
         // 모델 캐시 용량은 30초마다
         cacheTick += 1
         if cacheTick % 30 == 1 {
-            let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/FluidAudio/Models")
+            let dir = (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                       ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")).appendingPathComponent("FluidAudio/Models")
             DispatchQueue.global(qos: .utility).async {
                 let mb = Self.directorySizeMB(dir)
                 DispatchQueue.main.async { self.modelCacheMB = mb }

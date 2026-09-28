@@ -21,7 +21,7 @@ struct SettingsView: View {
             SessionTab(model: model, recorder: model.recorder, app: app).tabItem { Label("세션", systemImage: "record.circle") }.tag("session")
             ResourceTab(model: model, resources: resources).tabItem { Label("리소스", systemImage: "gauge.with.dots.needle.33percent") }.tag("resources")
             MetricsTab(model: model, resources: resources).tabItem { Label("메트릭", systemImage: "chart.xyaxis.line") }.tag("metrics")
-            AboutTab().tabItem { Label("정보", systemImage: "info.circle") }.tag("about")
+            AboutTab(model: model).tabItem { Label("정보", systemImage: "info.circle") }.tag("about")
         }
         .frame(width: 760, height: 620)
     }
@@ -32,11 +32,41 @@ struct SettingsView: View {
 struct EngineTab: View {
     @ObservedObject var model: SubtitleModel
 
+    @ObservedObject private var languages: LanguageSupport
+    @State private var pairStatus = ""
+
+    init(model: SubtitleModel) {
+        self.model = model
+        self.languages = model.languages
+    }
+
     var body: some View {
         Form {
+            Section("언어") {
+                Picker("말하는 언어", selection: Binding(get: { AppLanguage.named(model.sourceLanguage).code }, set: { model.setLanguages(source: $0) })) {
+                    ForEach(AppLanguage.all) { l in
+                        let ok = [EngineChoice.parakeetV2, .parakeetUltra, .apple].contains { languages.engineSupports($0, source: l.code) }
+                        Text(ok ? "\(l.name)  (\(l.short))" : "\(l.name)  (\(l.short)) — 인식 엔진 없음").tag(l.code)
+                    }
+                }
+                Picker("자막 언어", selection: Binding(get: { AppLanguage.named(model.targetLanguage).code }, set: { model.setLanguages(target: $0) })) {
+                    ForEach(AppLanguage.all) { l in
+                        let ok = languages.translationSupports(l.code) || AppLanguage.matches(l.code, model.sourceLanguage)
+                        Text(ok ? "\(l.name)  (\(l.short))" : "\(l.name)  (\(l.short)) — 번역 미지원").tag(l.code)
+                    }
+                }
+                LabeledContent("이 조합") {
+                    Text(languages.pairStatus["\(model.sourceLanguage)>\(model.targetLanguage)"] ?? (model.needsTranslation ? "확인 중…" : "같은 언어 (번역 안 함)"))
+                }
+                Text("말하는 언어를 바꾸면 그 언어를 들을 수 있는 엔진으로 자동 전환됩니다: Parakeet v2 = 영어 전용, Parakeet Ultra = 유럽 25개 언어(자동 감지), Apple 내장 = 시스템이 지원하는 언어(한국어·일본어·중국어 등). 자막 언어는 Apple 번역이 지원하는 언어 중에서 고르며, 새 조합은 첫 번역 때 모델 다운로드 창이 뜹니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("음성 인식") {
                 Picker("엔진", selection: Binding(get: { model.engineChoice }, set: { model.selectEngine($0) })) {
-                    ForEach(EngineChoice.allCases) { Text($0.title).tag($0) }
+                    ForEach(EngineChoice.allCases) { c in
+                        let ok = languages.engineSupports(c, source: model.sourceLanguage)
+                        Text(ok ? c.title : "\(c.title) — \(AppLanguage.named(model.sourceLanguage).name) 미지원").tag(c)
+                    }
                 }
                 .pickerStyle(.radioGroup)
                 if model.engineChoice != .apple {
@@ -52,7 +82,7 @@ struct EngineTab: View {
                     }
                 }
             }
-            Section("번역 (Apple 기기 내 번역, 영어 → 한국어)") {
+            Section("번역 (Apple 기기 내 번역, \(AppLanguage.named(model.sourceLanguage).name) → \(AppLanguage.named(model.targetLanguage).name))") {
                 LabeledContent("상태") {
                     HStack(spacing: 6) {
                         Circle().fill(model.translationReady ? Color.green : Color.orange).frame(width: 8, height: 8)
@@ -112,7 +142,7 @@ struct SubtitleTab: View {
                 Slider(value: $model.fontSize, in: 16...80, step: 1) { Text("글자 크기  \(Int(model.fontSize))pt") }
                 Slider(value: $model.opacity, in: 0.1...0.95) { Text("배경 불투명도  \(Int(model.opacity * 100))%") }
                 Toggle("자막 창 위 컨트롤 줄 항상 표시 (끄면 마우스를 올릴 때만)", isOn: $model.alwaysShowControls)
-                Toggle("영어 원문 함께 표시 (⌘E)", isOn: $model.showEnglish)
+                Toggle("원문(말하는 언어) 함께 표시 (⌘E)", isOn: $model.showSource)
                 Toggle("직전 문장 흐리게 표시", isOn: $model.showPrevious)
             }
             Section("창") {
@@ -155,8 +185,8 @@ struct SessionTab: View {
                     ForEach(SaveLocation.allCases) { loc in Text(loc.title).tag(loc) }
                 }
                 .pickerStyle(.radioGroup)
-                if recorder.location == .iCloud && SessionRecorder.iCloudDriveRoot == nil {
-                    Label("이 맥에 iCloud Drive가 꺼져 있어 ~/Documents 에 저장합니다. 시스템 설정 > Apple 계정 > iCloud > iCloud Drive 를 켜세요.", systemImage: "exclamationmark.triangle")
+                if recorder.location == .iCloud && Storage.iCloudRoot == nil {
+                    Label(Storage.iCloudUnavailableReason, systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.orange)
                 }
                 if recorder.location == .custom {
@@ -229,7 +259,7 @@ struct ResourceTab: View {
                 LabeledContent("CPU 사용률", value: String(format: "%.1f %%  (코어 1개 = 100%%)", resources.processCPU))
                 LabeledContent("메모리", value: String(format: "%.0f MB", resources.memoryMB))
                 LabeledContent("스레드", value: "\(resources.threads)개")
-                LabeledContent("음성 인식 모델 캐시", value: String(format: "%.0f MB  (~/Library/Application Support/FluidAudio/Models)", resources.modelCacheMB))
+                LabeledContent("음성 인식 모델 캐시", value: String(format: "%.0f MB  (%@)", resources.modelCacheMB, Storage.sandboxed ? "앱 컨테이너의 Application Support/FluidAudio/Models" : "~/Library/Application Support/FluidAudio/Models"))
                 Text("Neural Engine 사용량은 macOS가 앱에 제공하지 않습니다. 엔진별 실측 전력은 엔진 탭의 표, 시간에 따른 변화는 메트릭 탭을 참고하세요.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -262,6 +292,7 @@ struct ResourceTab: View {
 // MARK: - 정보
 
 struct AboutTab: View {
+    @ObservedObject var model: SubtitleModel
     var body: some View {
         Form {
             Section {
@@ -269,19 +300,19 @@ struct AboutTab: View {
                     Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("LiveSubtitle").font(.title2.bold())
-                        Text("실시간 영어 → 한국어 자막 · 버전 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
+                        Text("실시간 다국어 자막 (\(model.languagePair)) · 버전 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
                         Text("인식·번역은 모두 기기 내에서 처리됩니다. 세션 모드에서 저장 위치를 iCloud Drive로 둔 경우에만 파일이 iCloud로 올라갑니다.").font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
             Section("사용한 구성요소") {
                 LabeledContent("음성 인식", value: "NVIDIA Parakeet TDT 0.6B v2 / Ultra (CC-BY-4.0) · FluidAudio (Apache 2.0) · Apple SpeechAnalyzer")
-                LabeledContent("번역", value: "Apple Translation 프레임워크 (기기 내)")
+                LabeledContent("번역", value: "Apple Translation 프레임워크 (기기 내, 지원 언어 간 어느 조합이든)")
                 LabeledContent("저장", value: "AVFoundation (AAC 조각 녹음) · Swift Charts (메트릭·세션 그래프)")
                 LabeledContent("평가", value: "LibriSpeech test-other, powermetrics · 자세한 내용은 EVAL.md")
             }
             Section("단축키") {
-                Text("⌥⌘L  자막 창 보이기/숨기기 (전역, 어떤 앱에서나)\n⌘R  세션 시작/종료      ⌘L  세션 보기      ⌘,  설정      ⌘P  일시정지/재개      ⌘K  자막 지우기\n⌘=  글자 크게      ⌘-  글자 작게      ⌘E  영어 원문 표시      ⌘Q  종료")
+                Text("⌥⌘L  자막 창 보이기/숨기기 (전역, 어떤 앱에서나)\n⌘R  세션 시작/종료      ⌘L  세션 보기      ⌘,  설정      ⌘P  일시정지/재개      ⌘K  자막 지우기\n⌘=  글자 크게      ⌘-  글자 작게      ⌘E  원문 표시      ⌘Q  종료")
                     .font(.system(size: 12, design: .monospaced))
             }
         }

@@ -23,9 +23,54 @@ enum SaveLocation: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .iCloud: return "iCloud Drive  (iCloud Drive/LiveSubtitle/Sessions — 다른 기기와 동기화)"
-        case .documents: return "이 맥  (~/Documents/LiveSubtitle/Sessions)"
+        case .documents: return Storage.sandboxed ? "앱 폴더  (이 맥에만, Finder에서 열기로 접근)" : "이 맥  (~/Documents/LiveSubtitle/Sessions)"
         case .custom: return "직접 선택한 폴더"
         }
+    }
+}
+
+/// 저장 경로 해석. App Sandbox 안에서는 홈 폴더 대신 컨테이너·iCloud 컨테이너·사용자가 고른 폴더(보안 북마크)만 쓸 수 있다.
+enum Storage {
+    static let sandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+
+    /// 앱 기본 폴더: 비샌드박스 = ~/Documents, 샌드박스 = 컨테이너의 Documents
+    static var documents: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+    }
+
+    /// iCloud 컨테이너의 Documents (entitlement가 있는 App Store 빌드에서만 존재). Finder에는 iCloud Drive/LiveSubtitle 로 보임.
+    /// 첫 조회가 느릴 수 있어 앱 시작 시 백그라운드에서 한 번 미리 부른다.
+    nonisolated(unsafe) private static var ubiquityCache: URL??
+    static func ubiquityDocuments() -> URL? {
+        if let cached = ubiquityCache { return cached }
+        let u = FileManager.default.url(forUbiquityContainerIdentifier: nil)?.appendingPathComponent("Documents", isDirectory: true)
+        ubiquityCache = .some(u)
+        if let u { try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true) }
+        FileLog.write("iCloud container: \(u?.path ?? "없음") sandboxed=\(sandboxed)")
+        return u
+    }
+    static func prefetchUbiquity() {
+        DispatchQueue.global(qos: .userInitiated).async { _ = ubiquityDocuments() }
+    }
+
+    /// iCloud Drive 직접 경로 (비샌드박스 빌드에서만 접근 가능)
+    static var directCloudDocs: URL? {
+        guard !sandboxed else { return nil }
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue ? url : nil
+    }
+
+    /// Finder의 "iCloud Drive/LiveSubtitle" 에 해당하는 폴더. 없으면 nil (iCloud 꺼짐, 또는 샌드박스인데 컨테이너 권한 없음)
+    static var iCloudRoot: URL? {
+        if let u = ubiquityDocuments() { return u }
+        if let d = directCloudDocs { return d.appendingPathComponent("LiveSubtitle", isDirectory: true) }
+        return nil
+    }
+    static var iCloudUnavailableReason: String {
+        sandboxed ? "이 빌드에는 iCloud 컨테이너 권한이 없습니다 (App Store 빌드에서만 제공). 앱 폴더에 저장합니다."
+                  : "이 맥에 iCloud Drive가 꺼져 있어 ~/Documents 에 저장합니다. 시스템 설정 > Apple 계정 > iCloud > iCloud Drive 를 켜세요."
     }
 }
 
@@ -38,9 +83,39 @@ struct TranscriptLine: Identifiable, Equatable, Codable {
     let audioFile: String?     // 예: "audio/part-001.m4a" (녹음 파트)
     let audioStart: Double     // 파트 안의 위치(초)
     let audioEnd: Double
-    var english: String
-    var korean: String
+    var source: String         // 인식된 원문 (말하는 언어)
+    var target: String         // 번역 (자막 언어)
     var words: Int
+
+    init(id: UUID, index: Int, startedAt: Date, endedAt: Date, audioFile: String?, audioStart: Double, audioEnd: Double, source: String, target: String, words: Int) {
+        self.id = id; self.index = index; self.startedAt = startedAt; self.endedAt = endedAt
+        self.audioFile = audioFile; self.audioStart = audioStart; self.audioEnd = audioEnd
+        self.source = source; self.target = target; self.words = words
+    }
+
+    // 형식 1(english/korean)도 읽을 수 있게
+    private enum Keys: String, CodingKey { case id, index, startedAt, endedAt, audioFile, audioStart, audioEnd, source, target, words, english, korean }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        index = try c.decode(Int.self, forKey: .index)
+        startedAt = try c.decode(Date.self, forKey: .startedAt)
+        endedAt = try c.decode(Date.self, forKey: .endedAt)
+        audioFile = try c.decodeIfPresent(String.self, forKey: .audioFile)
+        audioStart = try c.decode(Double.self, forKey: .audioStart)
+        audioEnd = try c.decode(Double.self, forKey: .audioEnd)
+        source = try c.decodeIfPresent(String.self, forKey: .source) ?? c.decodeIfPresent(String.self, forKey: .english) ?? ""
+        target = try c.decodeIfPresent(String.self, forKey: .target) ?? c.decodeIfPresent(String.self, forKey: .korean) ?? ""
+        words = try c.decode(Int.self, forKey: .words)
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Keys.self)
+        try c.encode(id, forKey: .id); try c.encode(index, forKey: .index)
+        try c.encode(startedAt, forKey: .startedAt); try c.encode(endedAt, forKey: .endedAt)
+        try c.encodeIfPresent(audioFile, forKey: .audioFile)
+        try c.encode(audioStart, forKey: .audioStart); try c.encode(audioEnd, forKey: .audioEnd)
+        try c.encode(source, forKey: .source); try c.encode(target, forKey: .target); try c.encode(words, forKey: .words)
+    }
 }
 
 /// 녹음 파트: 엔진이 멈췄다 켜질 때마다(일시정지·엔진 전환·포맷 변경) 새 파일. 각 파트의 절대 시작 시각을 기록해 오디오 위치 ↔ 시각 변환이 가능하다.
@@ -63,6 +138,8 @@ struct SessionManifest: Codable {
     var timeZone: String
     var engine: String
     var engineLagSeconds: Double        // 발화 → 확정 텍스트 추정 지연 (Parakeet: 창 + 우측 문맥)
+    var sourceLanguage: String?         // 말하는 언어 (BCP-47), 형식 1에는 없음 → en
+    var targetLanguage: String?         // 자막 언어, 형식 1에는 없음 → ko
     var audio: [AudioPart]
     var sentences: Int
     var words: Int
@@ -71,7 +148,7 @@ struct SessionManifest: Codable {
 
 /// transcript.json
 struct TranscriptDocument: Codable {
-    var format = "livesubtitle-transcript/1"
+    var format = "livesubtitle-transcript/2"
     var sessionId: String
     var segments: [TranscriptLine]
 }
@@ -93,9 +170,8 @@ final class SessionRecorder: ObservableObject {
     @Published var location: SaveLocation = SaveLocation(rawValue: UserDefaults.standard.string(forKey: "rec.location") ?? "") ?? .iCloud {
         didSet { UserDefaults.standard.set(location.rawValue, forKey: "rec.location") }
     }
-    @Published var customPath: String = UserDefaults.standard.string(forKey: "rec.customPath") ?? "" {
-        didSet { UserDefaults.standard.set(customPath, forKey: "rec.customPath") }
-    }
+    @Published private(set) var customPath: String = UserDefaults.standard.string(forKey: "rec.customPath") ?? ""
+    private var customURL: URL?                       // 보안 북마크에서 복원한 폴더 (접근 중)
 
     // MARK: 상태 (UI 표시용)
 
@@ -110,32 +186,52 @@ final class SessionRecorder: ObservableObject {
     @Published private(set) var lastSavedAt: Date?
 
     var wordCount: Int { lines.reduce(0) { $0 + $1.words } }
-    var sessionsRoot: URL { baseFolder.appendingPathComponent("LiveSubtitle/Sessions", isDirectory: true) }
-    var usingICloud: Bool { location == .iCloud && Self.iCloudDriveRoot != nil }
+    var usingICloud: Bool { location == .iCloud && Storage.iCloudRoot != nil }
 
-    /// iCloud Drive 루트 (iCloud Drive를 켠 맥에만 존재)
-    static var iCloudDriveRoot: URL? {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
-        var isDir: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue ? url : nil
-    }
-    /// 이전 형식(폴더 바로 아래 transcript.md)이 저장되던 곳 — 세션 보기에서 함께 읽음
-    static var legacyRoot: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/LiveSubtitle", isDirectory: true)
-    }
-
-    private var baseFolder: URL {
-        let docs = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents", isDirectory: true)
+    /// 현재 설정의 세션 폴더 (…/Sessions)
+    var sessionsRoot: URL {
         switch location {
-        case .iCloud: return Self.iCloudDriveRoot ?? docs
-        case .documents: return docs
-        case .custom: return customPath.isEmpty ? docs : URL(fileURLWithPath: customPath, isDirectory: true)
+        case .iCloud: return (Storage.iCloudRoot ?? Storage.documents.appendingPathComponent("LiveSubtitle", isDirectory: true)).appendingPathComponent("Sessions", isDirectory: true)
+        case .documents: return Self.documentsSessions
+        case .custom: return (customURL ?? (customPath.isEmpty ? nil : URL(fileURLWithPath: customPath, isDirectory: true)))
+                .map { $0.appendingPathComponent("LiveSubtitle/Sessions", isDirectory: true) } ?? Self.documentsSessions
+        }
+    }
+    static var documentsSessions: URL { Storage.documents.appendingPathComponent("LiveSubtitle/Sessions", isDirectory: true) }
+    static var iCloudSessions: URL? { Storage.iCloudRoot?.appendingPathComponent("Sessions", isDirectory: true) }
+    var customSessions: URL? { customURL.map { $0.appendingPathComponent("LiveSubtitle/Sessions", isDirectory: true) } }
+
+    /// 이전 형식(폴더 바로 아래 transcript.md)이 저장되던 곳 — 비샌드박스에서만 함께 읽음
+    static var legacyRoot: URL? {
+        Storage.sandboxed ? nil : FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/LiveSubtitle", isDirectory: true)
+    }
+
+    init() {
+        Storage.prefetchUbiquity()
+        restoreCustomFolder()
+    }
+
+    /// 직접 고른 폴더는 보안 북마크로 저장·복원 (샌드박스에서 다음 실행에도 접근 가능)
+    private func restoreCustomFolder() {
+        guard let data = UserDefaults.standard.data(forKey: "rec.customBookmark") else { return }
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: data, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale) else {
+            FileLog.write("custom folder bookmark could not be resolved")
+            return
+        }
+        _ = url.startAccessingSecurityScopedResource()
+        customURL = url
+        customPath = url.path
+        if stale, let fresh = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) {
+            UserDefaults.standard.set(fresh, forKey: "rec.customBookmark")
         }
     }
 
     private var sessionID = ""
     private var engineTitle = ""
     private var engineLag: Double = 0
+    var sourceLanguage = "en"           // SubtitleModel이 갱신
+    var targetLanguage = "ko"
     private var dirty = false
     private var timer: Timer?
     private var tick = 0
@@ -279,23 +375,23 @@ final class SessionRecorder: ObservableObject {
 
     // MARK: 문장
 
-    func addLine(id: UUID, startedAt: Date?, english: String, korean: String) {
+    func addLine(id: UUID, startedAt: Date?, source: String, target: String) {
         guard isActive else { return }
         let ended = Date()
         let started = startedAt ?? lines.last?.endedAt ?? ended
         let pos = ioQ.sync { audio.position }        // (파일, 파트 안 위치)
         let end = pos.seconds
         let start = max(0, end - ended.timeIntervalSince(started))
-        let words = english.split(whereSeparator: { $0 == " " || $0 == "\n" }).count
+        let words = source.split(whereSeparator: { $0 == " " || $0 == "\n" }).count
         lines.append(TranscriptLine(id: id, index: lines.count, startedAt: started, endedAt: ended,
                                     audioFile: pos.file, audioStart: start, audioEnd: end,
-                                    english: english, korean: korean, words: words))
+                                    source: source, target: target, words: words))
         dirty = true
     }
 
-    func updateKorean(id: UUID, korean: String) {
+    func updateTarget(id: UUID, target: String) {
         guard let i = lines.lastIndex(where: { $0.id == id }) else { return }
-        lines[i].korean = korean
+        lines[i].target = target
         dirty = true
     }
 
@@ -333,7 +429,8 @@ final class SessionRecorder: ObservableObject {
         guard let folder = sessionURL, let start = sessionStart else { return }
         let m = SessionManifest(id: sessionID, title: "LiveSubtitle \(Self.titleStamp.string(from: start))",
                                 startedAt: start, endedAt: ended ? Date() : nil, timeZone: TimeZone.current.identifier,
-                                engine: engineTitle, engineLagSeconds: engineLag, audio: parts,
+                                engine: engineTitle, engineLagSeconds: engineLag,
+                                sourceLanguage: sourceLanguage, targetLanguage: targetLanguage, audio: parts,
                                 sentences: lines.count, words: wordCount,
                                 files: ["transcript": "transcript.json", "transcriptMarkdown": "transcript.md", "metrics": "metrics.csv", "photos": "photos.json"])
         guard let data = try? Self.encoder.encode(m) else { return }
@@ -345,13 +442,14 @@ final class SessionRecorder: ObservableObject {
         var s = "# LiveSubtitle \(Self.titleStamp.string(from: start))\n\n"
         s += "- 시작: \(Self.fullStamp.string(from: start))\n"
         s += "- 엔진: \(engineTitle)\n"
+        s += "- 언어: \(AppLanguage.named(sourceLanguage).name) → \(AppLanguage.named(targetLanguage).name)\n"
         s += "- 문장: \(lines.count)개 · 단어: \(wordCount)개\n"
         s += "- 녹음: \(parts.count)개 파트, \(Self.clock(audioSeconds))  [시각 · 파트 위치]\n"
         s += "\n---\n\n"
         for l in lines {
             let part = l.audioFile.map { ($0 as NSString).lastPathComponent.replacingOccurrences(of: ".m4a", with: "") } ?? "-"
-            s += "**[\(Self.timeOnly.string(from: l.endedAt)) · \(part) \(Self.clock(l.audioStart))]** \(l.korean.isEmpty ? "(번역 대기)" : l.korean)  \n"
-            s += "EN: \(l.english)\n\n"
+            s += "**[\(Self.timeOnly.string(from: l.endedAt)) · \(part) \(Self.clock(l.audioStart))]** \(l.target.isEmpty ? "(번역 대기)" : l.target)  \n"
+            s += "\(AppLanguage.named(sourceLanguage).short): \(l.source)\n\n"
         }
         return s
     }
@@ -391,7 +489,14 @@ final class SessionRecorder: ObservableObject {
         if !customPath.isEmpty { panel.directoryURL = URL(fileURLWithPath: customPath) }
         NSApp.activate(ignoringOtherApps: true)
         if panel.runModal() == .OK, let url = panel.url {
+            customURL?.stopAccessingSecurityScopedResource()
+            _ = url.startAccessingSecurityScopedResource()
+            customURL = url
             customPath = url.path
+            UserDefaults.standard.set(customPath, forKey: "rec.customPath")
+            if let bm = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                UserDefaults.standard.set(bm, forKey: "rec.customBookmark")
+            }
             location = .custom
         }
     }

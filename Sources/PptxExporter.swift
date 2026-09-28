@@ -13,8 +13,8 @@ enum PptxExporter {
     }
 
     enum ExportError: LocalizedError {
-        case zipFailed(String)
-        var errorDescription: String? { if case .zipFailed(let m) = self { return "pptx 압축 실패: \(m)" }; return nil }
+        case writeFailed(String)
+        var errorDescription: String? { if case .writeFailed(let m) = self { return "pptx 저장 실패: \(m)" }; return nil }
     }
 
     // 16:9, EMU (914400 = 1인치)
@@ -37,24 +37,21 @@ enum PptxExporter {
     @discardableResult
     static func export(detail: SessionDetail, to url: URL, options: Options = Options()) throws -> Int {
         let slides = plan(detail: detail, options: options)
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("livesub-pptx-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let fm = FileManager.default
-        for d in ["_rels", "ppt/_rels", "ppt/slides/_rels", "ppt/slideLayouts/_rels", "ppt/slideMasters/_rels", "ppt/theme", "ppt/media", "docProps"] {
-            try fm.createDirectory(at: tmp.appendingPathComponent(d), withIntermediateDirectories: true)
-        }
-        func write(_ path: String, _ s: String) throws { try s.write(to: tmp.appendingPathComponent(path), atomically: true, encoding: .utf8) }
+        var zip = ZipWriter()
+        var parts: [(String, String)] = []        // (경로, XML) — [Content_Types].xml 을 첫 항목으로 넣기 위해 모아 둠
+        func write(_ path: String, _ s: String) throws { parts.append((path, s)) }
 
-        // 미디어: 사진 파일 복사 (같은 사진이 여러 슬라이드에 쓰여도 한 번만)
+        // 미디어: 사진 파일 (같은 사진이 여러 슬라이드에 쓰여도 한 번만)
         var mediaIndex: [String: Int] = [:]
-        var mediaCount = 0
+        var media: [(String, Data)] = []
         for s in slides {
             for p in s.photos where mediaIndex[p.file] == nil {
-                mediaCount += 1
-                mediaIndex[p.file] = mediaCount
-                try? fm.copyItem(at: detail.summary.url.appendingPathComponent(p.file), to: tmp.appendingPathComponent("ppt/media/image\(mediaCount).jpg"))
+                guard let d = try? Data(contentsOf: detail.summary.url.appendingPathComponent(p.file)) else { continue }
+                mediaIndex[p.file] = media.count + 1
+                media.append(("ppt/media/image\(media.count + 1).jpg", d))
             }
         }
+        let mediaCount = media.count
 
         // 슬라이드 XML
         let total = slides.count + 1
@@ -62,9 +59,9 @@ enum PptxExporter {
         try write("ppt/slides/_rels/slide1.xml.rels", slideRels(media: []))
         for (i, s) in slides.enumerated() {
             let n = i + 2
-            let media = s.photos.map { mediaIndex[$0.file]! }
-            try write("ppt/slides/slide\(n).xml", contentSlide(s, detail: detail, media: media, options: options, number: n - 1, of: slides.count))
-            try write("ppt/slides/_rels/slide\(n).xml.rels", slideRels(media: media))
+            let ids = s.photos.compactMap { mediaIndex[$0.file] }
+            try write("ppt/slides/slide\(n).xml", contentSlide(s, detail: detail, media: ids, options: options, number: n - 1, of: slides.count))
+            try write("ppt/slides/_rels/slide\(n).xml.rels", slideRels(media: ids))
         }
 
         // 패키지 뼈대
@@ -107,7 +104,12 @@ enum PptxExporter {
         """)
         try write("ppt/theme/theme1.xml", theme())
 
-        try zip(folder: tmp, to: url)
+        // 조립: [Content_Types].xml → 나머지 XML → 미디어
+        if let ct = parts.first(where: { $0.0 == "[Content_Types].xml" }) { zip.add(ct.0, ct.1) }
+        for (path, xml) in parts where path != "[Content_Types].xml" { zip.add(path, xml) }
+        for (path, d) in media { zip.add(path, d) }          // 줄어들면 deflate, 아니면 stored
+        do { try zip.finish().write(to: url, options: .atomic) }
+        catch { throw ExportError.writeFailed(error.localizedDescription) }
         FileLog.write("pptx exported: \(url.path) slides=\(total) media=\(mediaCount)")
         return total
     }
@@ -153,9 +155,10 @@ enum PptxExporter {
         let hasPhoto = !s.photos.isEmpty
         // 사진: 왼쪽 열을 세로로 나눠 비율 유지
         if hasPhoto {
-            let n = s.photos.count
+            let photos = Array(s.photos.prefix(media.count))     // 파일을 못 읽은 사진은 제외
+            let n = max(1, photos.count)
             let cellH = (contentH - gap / 2 * (n - 1)) / n
-            for (i, p) in s.photos.enumerated() {
+            for (i, p) in photos.enumerated() {
                 let boxX = margin, boxY = margin + i * (cellH + gap / 2)
                 let scale = min(Double(photoColW) / Double(max(1, p.width)), Double(cellH) / Double(max(1, p.height)))
                 let w = Int(Double(p.width) * scale), h = Int(Double(p.height) * scale)
@@ -173,10 +176,10 @@ enum PptxExporter {
         let enSize = hasPhoto ? 1100 : 1300
         if s.continued && !s.lines.isEmpty { paras.append(para("(이어서)", size: 1000, color: "9A9A9A")) }
         for l in s.lines {
-            let ko = l.korean.isEmpty ? l.english : l.korean
-            paras.append(para(esc(ko), size: koSize, color: "1F1F1F", spaceBefore: 600))
-            if options.includeEnglish && !l.korean.isEmpty {
-                paras.append(para(esc(l.english), size: enSize, color: "7A7A7A"))
+            let main = l.target.isEmpty ? l.source : l.target
+            paras.append(para(esc(main), size: koSize, color: "1F1F1F", spaceBefore: 600))
+            if options.includeEnglish && !l.target.isEmpty && l.source != l.target {
+                paras.append(para(esc(l.source), size: enSize, color: "7A7A7A"))
             }
         }
         if s.lines.isEmpty { paras.append(para(hasPhoto ? "(이 사진 구간에 확정된 문장 없음)" : "", size: 1200, color: "9A9A9A")) }
@@ -296,24 +299,6 @@ enum PptxExporter {
     }
 
     // MARK: 유틸
-
-    /// /usr/bin/zip 으로 압축 ([Content_Types].xml 을 첫 항목으로)
-    private static func zip(folder: URL, to url: URL) throws {
-        try? FileManager.default.removeItem(at: url)
-        func run(_ args: [String]) throws {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-            p.currentDirectoryURL = folder
-            p.arguments = args
-            let err = Pipe(); p.standardError = err; p.standardOutput = Pipe()
-            try p.run(); p.waitUntilExit()
-            guard p.terminationStatus == 0 else {
-                throw ExportError.zipFailed(String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "code \(p.terminationStatus)")
-            }
-        }
-        try run(["-X", "-D", "-q", url.path, "[Content_Types].xml"])
-        try run(["-X", "-D", "-q", "-r", url.path, ".", "-x", "[Content_Types].xml"])
-    }
 
     static func esc(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")

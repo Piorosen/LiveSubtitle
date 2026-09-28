@@ -13,7 +13,10 @@ final class AnalyzerEngine {
     var onAudio: ((AVAudioPCMBuffer) -> Void)?     // 마이크 원본 버퍼 (세션 녹음용, 탭 스레드에서 호출)
 
     private let engine = AVAudioEngine()
+    private let locale: Locale
     private var analyzer: SpeechAnalyzer?
+
+    init(locale: Locale = Locale(identifier: "en-US")) { self.locale = locale }
     private var transcriber: SpeechTranscriber?
     private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
     private var resultsTask: Task<Void, Never>?
@@ -24,7 +27,7 @@ final class AnalyzerEngine {
         case unsupportedLocale, noAudioFormat, converter
         var errorDescription: String? {
             switch self {
-            case .unsupportedLocale: return "SpeechAnalyzer가 영어를 지원하지 않음"
+            case .unsupportedLocale: return "SpeechAnalyzer가 이 언어를 지원하지 않음"
             case .noAudioFormat: return "SpeechAnalyzer 오디오 포맷 없음"
             case .converter: return "오디오 변환기 생성 실패"
             }
@@ -41,7 +44,6 @@ final class AnalyzerEngine {
             throw EngineError.noAudioFormat
         }
 
-        let locale = Locale(identifier: "en-US")
         guard let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
             throw EngineError.unsupportedLocale
         }
@@ -57,7 +59,7 @@ final class AnalyzerEngine {
         let assetStatus = await AssetInventory.status(forModules: [transcriber])
         FileLog.write("analyzer asset status: \(assetStatus)")
         if assetStatus != .installed {
-            status("영어 인식 모델 다운로드 중… (최초 1회)", false)
+            status("인식 모델 다운로드 중… (최초 1회, \(supported.identifier(.bcp47)))", false)
             if let req = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
                 try await req.downloadAndInstall()
             }
@@ -116,7 +118,7 @@ final class AnalyzerEngine {
         }
         engine.prepare()
         try engine.start()
-        status("듣는 중 (기기 내 인식 · SpeechAnalyzer)", true)
+        status("듣는 중 (기기 내 인식 · SpeechAnalyzer · \(supported.identifier(.bcp47)))", true)
         FileLog.write("analyzer engine started")
     }
 

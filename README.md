@@ -1,8 +1,8 @@
-# LiveSubtitle — 실시간 영어 → 한국어 자막 오버레이 (macOS)
+# LiveSubtitle — 실시간 다국어 자막 오버레이 (macOS)
 
-연설자의 영어 음성을 마이크로 듣고, 한국어로 번역해 화면 하단에 반투명 자막으로 띄웁니다.
-음성 인식은 **NVIDIA Parakeet TDT 0.6B v2 (CoreML, Neural Engine)** 를 기본으로 쓰고, Apple 내장 SpeechAnalyzer로도 바꿀 수 있습니다.
-번역은 Apple **기기 내 번역(Translation 프레임워크)** 입니다. API 키나 인터넷이 필요 없습니다 (최초 1회 모델 다운로드만).
+연설자의 음성을 마이크로 듣고, 원하는 언어로 번역해 화면 하단에 반투명 자막으로 띄웁니다. 기본은 영어 → 한국어이고, **말하는 언어와 자막 언어를 각각 고를 수 있습니다** (메뉴바 > 언어, 설정 > 엔진, 자막 창의 `EN → KO` pill).
+음성 인식은 **NVIDIA Parakeet TDT 0.6B v2 (CoreML, Neural Engine, 영어 전용)** 를 기본으로 쓰고, 유럽 25개 언어는 Parakeet Ultra(자동 감지), 한국어·일본어·중국어 등 그 밖의 언어는 Apple 내장 SpeechAnalyzer가 맡습니다. 말하는 언어를 바꾸면 들을 수 있는 엔진으로 자동 전환됩니다.
+번역은 Apple **기기 내 번역(Translation 프레임워크)** 이며 지원 언어 간 어느 조합이든 됩니다. API 키나 인터넷이 필요 없습니다 (조합마다 최초 1회 모델 다운로드만). 말하는 언어와 자막 언어가 같으면 번역 없이 원문만 표시합니다.
 두 가지 모드가 있습니다. **기본 모드**는 자막만 보여 주고 아무것도 저장하지 않습니다. **세션 모드**는 iCloud Drive(또는 이 맥)의 세션 폴더에 **녹음(m4a) · 문장별 절대 시각이 붙은 전사(json/md) · 자원 메트릭(csv)** 을 구조화해 저장하며, 나중에 Photos의 촬영 시각과 맞춰 pptx로 내보내는 것을 염두에 둔 형식입니다. **세션 보기** 창에서 저장된 세션의 자막 타임라인·그래프·재생을 볼 수 있고, 설정의 **메트릭** 탭에서 실시간 CPU·메모리·전력·번역 지연·처리량 그래프를 봅니다.
 엔진별 정확도·속도·전력 실측은 [EVAL.md](EVAL.md) 참고.
 
@@ -37,7 +37,7 @@ Xcode 26 이상이 필요합니다.
 - **메뉴바 아이콘(말풍선)**: 자막 창 보이기/숨기기, **세션 시작/종료**(세션 모드면 녹음 시간·문장 수 표시), 세션 보기, 현재 상태·CPU·메모리, 일시정지, 자막 지우기, 엔진 빠른 전환, 세션 파일(폴더 열기·새 세션으로 나누기), 설정, 종료
 - **자막 창**: 항상 다른 창 위에 뜨고, 배경을 잡고 드래그하면 이동, 가장자리를 끌면 크기 조절. 컨트롤 줄에 상태, **세션 시작 pill**(세션 모드면 빨간 ● 녹음 시간 · 문장 수), 세션 보기, 일시정지, 설정, 숨기기 버튼. 큰 흰 글씨 = 현재 문장 한국어, 노란 작은 글씨 = 영어 원문, 위 흐린 글씨 = 직전 문장
 - **설정 (⌘,)**
-  - 엔진: Parakeet v2 / Parakeet Ultra / Apple 내장 선택, 지연↔정확도 프리셋(정확/균형/빠름), 번역 상태, 엔진별 실측 비교표
+  - 엔진: 말하는 언어·자막 언어(이 맥에서 인식·번역이 지원되는 언어만 활성, 조합별 번역 모델 상태), Parakeet v2 / Parakeet Ultra / Apple 내장 선택, 지연↔정확도 프리셋(정확/균형/빠름), 번역 상태, 엔진별 실측 비교표
   - 자막: 글자 크기, 배경 불투명도, 영어 원문·직전 문장 표시, 창 위치 초기화
   - 세션: 기본/세션 모드, 저장 위치(iCloud Drive / 이 맥 / 직접 선택), 세션 폴더 구조, 현재 세션 상태, 세션 보기 (아래 "세션 모드" 참고)
   - 리소스: 이 앱의 CPU·메모리·스레드, 모델 캐시 용량, 시스템 CPU·소비 전력·열 상태·저전력 모드·배터리, 세션 통계(문장·단어 수, 번역 지연), 로그 열기
@@ -46,7 +46,8 @@ Xcode 26 이상이 필요합니다.
 - **자막 창을 숨겼다가 다시 보려면**: 어디서나 **⌥⌘L**, 또는 메뉴바의 "자막" 아이콘을 눌러 맨 위의 **자막 창 보이기**. 앱을 다시 켜면 항상 자막 창이 보이는 상태로 시작합니다. 노치 맥북에서 메뉴바가 꽉 차면 아이콘이 가려질 수 있는데, 그때도 ⌥⌘L은 동작합니다.
 - 자막 창 위의 컨트롤 줄(상태·일시정지·설정·숨기기)은 기본적으로 항상 표시되며, 설정 > 자막에서 마우스를 올릴 때만 보이도록 바꿀 수 있습니다.
 - 모든 설정(엔진, 프리셋, 글자, 투명도, 표시 옵션, 창 위치·크기)은 자동 저장되어 다음 실행 때 복원됩니다.
-- 단축키: `⌥⌘L` 자막 창 보이기/숨기기(전역), `⌘R` 세션 시작/종료, `⌘L` 세션 보기, `⌘,` 설정, `⌘P` 일시정지/재개, `⌘K` 자막 지우기, `⌘=`/`⌘-` 글자 크기, `⌘E` 영어 원문, `⌘Q` 종료
+- 단축키: `⌥⌘L` 자막 창 보이기/숨기기(전역), `⌘R` 세션 시작/종료, `⌘L` 세션 보기, `⌘,` 설정, `⌘P` 일시정지/재개, `⌘K` 자막 지우기, `⌘=`/`⌘-` 글자 크기, `⌘E` 원문 표시, `⌘Q` 종료
+- 언어: 메뉴바 > **언어** 서브메뉴(말하는 언어 / 자막 언어)에서 바로 바꿀 수 있습니다. 세션 파일(`session.json`, `transcript.json`의 `source`/`target`)에도 언어가 기록됩니다.
 
 ## 세션 모드
 
@@ -55,7 +56,7 @@ Xcode 26 이상이 필요합니다.
 ```
 iCloud Drive/LiveSubtitle/Sessions/2026-09-29 09-15-02/     (기본 위치, 없으면 ~/Documents/LiveSubtitle/Sessions)
 ├── session.json        시각(시간대 포함)·엔진·추정 인식 지연·녹음 파트 목록(절대 시작 시각·길이)·문장/단어 수
-├── transcript.json     문장마다 startedAt / endedAt(절대 시각) + 녹음 파트·위치(초) + 영어·한국어·단어 수
+├── transcript.json     문장마다 startedAt / endedAt(절대 시각) + 녹음 파트·위치(초) + source(원문)·target(번역)·단어 수
 ├── transcript.md       사람이 읽는 전사
 ├── metrics.csv         1초 간격: 앱·시스템 CPU, 메모리, 스레드, 시스템 전력(W), 열 상태, 누적 문장·단어, 번역 지연
 ├── audio/part-001.m4a  녹음 (AAC 64kbps, 약 30 MB/시간). 5초 조각 기록이라 앱이 죽어도 마지막 5초만 잃음
@@ -92,6 +93,7 @@ iCloud Drive/LiveSubtitle/Sessions/2026-09-29 09-15-02/     (기본 위치, 없�
 | `Sources/ResourceMonitor.swift` | CPU·메모리·스레드·시스템 전력·열 상태·배터리 1초 표본화, 최근 30분 보관 |
 | `Sources/ParakeetEngine.swift` | Parakeet TDT CoreML 스트리밍 인식 (기본, FluidAudio) |
 | `Sources/EngineCatalog.swift`, `EngineMeasurements.swift` | 엔진 목록과 실측 비교표 데이터 |
+| `Sources/Languages.swift` | 선택 가능한 언어 목록, 엔진별 지원 언어, Apple 번역·인식 지원 언어 실행 시 조회 |
 | `Sources/AnalyzerEngine.swift` | macOS 26 SpeechAnalyzer 온디바이스 인식 (대안) |
 | `Sources/SpeechEngine.swift` | 구형 SFSpeechRecognizer 폴백 (macOS 15, 받아쓰기 필요) |
 | `Sources/FileLog.swift` | `~/Library/Logs/LiveSubtitle.log` 기록 |
@@ -100,6 +102,22 @@ iCloud Drive/LiveSubtitle/Sessions/2026-09-29 09-15-02/     (기본 위치, 없�
 | `Info.plist` | 마이크/음성 인식/사진 보관함 사용 설명 (권한 창 문구) |
 | `Package.swift`, `build.sh` / `run.sh` | SwiftPM 빌드(FluidAudio 의존) → `.app` 번들 → ad-hoc 서명 |
 | `eval/`, `EVAL.md` | 엔진 평가 도구(WER, 스트리밍, 전력)와 결과 |
+
+## App Sandbox · Mac App Store
+
+앱은 App Sandbox 안에서도 동작하도록 만들어져 있습니다 (홈 폴더 직접 접근 없음, 외부 프로세스 없음).
+
+- 저장 위치: 샌드박스에서는 iCloud 컨테이너(`iCloud Drive/LiveSubtitle`, App Store 빌드), 앱 컨테이너의 Documents, 또는 사용자가 고른 폴더(보안 북마크로 다음 실행에도 유지) 중 하나. 비샌드박스 빌드(`./build.sh`, GitHub Release DMG)는 지금처럼 iCloud Drive 폴더에 직접 씁니다.
+- pptx 는 앱 안의 zip 생성기(`Sources/ZipWriter.swift`)로 만들며 `/usr/bin/zip` 을 쓰지 않습니다. 로그·모델 캐시는 컨테이너 안 Library 로 갑니다.
+- entitlements 세 가지: `LiveSubtitle.entitlements`(Developer ID, 비샌드박스), `LiveSubtitle.sandbox.entitlements`(샌드박스 검증용, ad-hoc 서명 가능), `LiveSubtitle.appstore.entitlements`(샌드박스 + iCloud 컨테이너, TEAM_ID 치환).
+
+```zsh
+SANDBOX=1 ./build.sh          # build/LiveSubtitle-sandbox.app — 샌드박스 동작 검증 (iCloud 컨테이너 제외)
+TEAM_ID=ABCDE12345 PROFILE=~/Downloads/LiveSubtitle_AppStore.provisionprofile VERSION=1.2.0 ./build-appstore.sh
+                              # dist/LiveSubtitle-1.2.0.pkg — Transporter 로 App Store Connect 에 업로드
+```
+
+App Store 제출에 필요한 것: Apple Developer Program, App ID `party.udon.livesubtitle` 에 iCloud(CloudDocuments, 컨테이너 `iCloud.party.udon.livesubtitle`) 기능, "3rd Party Mac Developer Application / Installer" 인증서, Mac App Store 프로비저닝 프로파일, App Store Connect 앱 등록(스크린샷, 개인정보 처리방침 URL — 음성·텍스트는 기기 밖으로 나가지 않음). `Info.plist` 에는 `LSApplicationCategoryType`, `ITSAppUsesNonExemptEncryption`, `NSUbiquitousContainers` 가 들어 있습니다.
 
 ## 배포 자동화 (GitHub Actions)
 

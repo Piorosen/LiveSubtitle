@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Mac App Store 빌드: build-appstore.sh 가 TEAM_ID 를 채워 넣음. App ID 에 iCloud(CloudDocuments) 기능과 프로비저닝 프로파일 필요 -->
+    <key>com.apple.security.app-sandbox</key>                        <true/>
+    <key>com.apple.security.network.client</key>                     <true/>
+    <key>com.apple.security.device.audio-input</key>                 <true/>
+    <key>com.apple.security.files.user-selected.read-write</key>     <true/>
+    <key>com.apple.security.files.bookmarks.app-scope</key>          <true/>
+    <key>com.apple.security.personal-information.photos-library</key> <true/>
+    <key>com.apple.application-identifier</key>                      <string>TEAM_ID.party.udon.livesubtitle</string>
+    <key>com.apple.developer.team-identifier</key>                   <string>TEAM_ID</string>
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array><string>iCloud.party.udon.livesubtitle</string></array>
+    <key>com.apple.developer.icloud-services</key>
+    <array><string>CloudDocuments</string></array>
+    <key>com.apple.developer.ubiquity-container-identifiers</key>
+    <array><string>iCloud.party.udon.livesubtitle</string></array>
+</dict>
+</plist>

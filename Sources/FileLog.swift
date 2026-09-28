@@ -3,7 +3,9 @@ import Foundation
 /// ~/Library/Logs/LiveSubtitle.log 에 한 줄씩 기록 (문제 확인용)
 enum FileLog {
     static let url: URL = {
-        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs")
+        // 샌드박스에서는 컨테이너의 Library/Logs 로 감
+        let dir = (FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
+                   ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library")).appendingPathComponent("Logs")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("LiveSubtitle.log")
     }()

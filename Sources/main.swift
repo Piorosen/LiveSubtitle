@@ -174,6 +174,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engineItem.submenu = engineMenu
         menu.addItem(engineItem)
 
+        // 언어: 말하는 언어 / 자막 언어 (엔진·번역이 지원하는 것만 활성)
+        let langMenu = NSMenu()
+        let h1 = NSMenuItem(title: "말하는 언어", action: nil, keyEquivalent: ""); h1.isEnabled = false; langMenu.addItem(h1)
+        for l in AppLanguage.all {
+            let it = NSMenuItem(title: "\(l.name)  \(l.short)", action: #selector(pickSourceLanguage(_:)), keyEquivalent: "")
+            it.target = self; it.representedObject = l.code
+            it.state = AppLanguage.matches(l.code, model.sourceLanguage) ? .on : .off
+            it.isEnabled = [EngineChoice.parakeetV2, .parakeetUltra, .apple].contains { model.languages.engineSupports($0, source: l.code) }
+            it.indentationLevel = 1
+            langMenu.addItem(it)
+        }
+        langMenu.addItem(.separator())
+        let h2 = NSMenuItem(title: "자막 언어", action: nil, keyEquivalent: ""); h2.isEnabled = false; langMenu.addItem(h2)
+        for l in AppLanguage.all {
+            let it = NSMenuItem(title: "\(l.name)  \(l.short)", action: #selector(pickTargetLanguage(_:)), keyEquivalent: "")
+            it.target = self; it.representedObject = l.code
+            it.state = AppLanguage.matches(l.code, model.targetLanguage) ? .on : .off
+            it.isEnabled = model.languages.translationSupports(l.code) || AppLanguage.matches(l.code, model.sourceLanguage)
+            it.indentationLevel = 1
+            langMenu.addItem(it)
+        }
+        let langItem = NSMenuItem(title: "언어  (\(model.languagePair))", action: nil, keyEquivalent: "")
+        langItem.submenu = langMenu
+        menu.addItem(langItem)
+
         // 세션 파일
         let sessionMenu = NSMenu()
         let openFolder = NSMenuItem(title: rec.isActive ? "현재 세션 폴더 열기" : "세션 폴더 열기", action: #selector(revealSession(_:)), keyEquivalent: "")
@@ -267,7 +292,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func clearLines(_ sender: Any?) { model.clear() }
     @objc func fontBigger(_ sender: Any?) { model.fontSize = min(80, model.fontSize + 2) }
     @objc func fontSmaller(_ sender: Any?) { model.fontSize = max(16, model.fontSize - 2) }
-    @objc func toggleEnglish(_ sender: Any?) { model.showEnglish.toggle() }
+    @objc func toggleSource(_ sender: Any?) { model.showSource.toggle() }
+    @objc func pickSourceLanguage(_ sender: NSMenuItem) { if let c = sender.representedObject as? String { model.setLanguages(source: c) } }
+    @objc func pickTargetLanguage(_ sender: NSMenuItem) { if let c = sender.representedObject as? String { model.setLanguages(target: c) } }
 
     private func makeMainMenu() -> NSMenu {
         let main = NSMenu()
@@ -285,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view.addItem(withTitle: "자막 지우기", action: #selector(clearLines(_:)), keyEquivalent: "k").target = self
         view.addItem(withTitle: "글자 크게", action: #selector(fontBigger(_:)), keyEquivalent: "=").target = self
         view.addItem(withTitle: "글자 작게", action: #selector(fontSmaller(_:)), keyEquivalent: "-").target = self
-        view.addItem(withTitle: "영어 원문 표시 전환", action: #selector(toggleEnglish(_:)), keyEquivalent: "e").target = self
+        view.addItem(withTitle: "원문 표시 전환", action: #selector(toggleSource(_:)), keyEquivalent: "e").target = self
         view.addItem(.separator())
         view.addItem(withTitle: "세션 시작 / 종료", action: #selector(toggleMode(_:)), keyEquivalent: "r").target = self
         view.addItem(withTitle: "세션 보기…", action: #selector(showSessions(_:)), keyEquivalent: "l").target = self
@@ -293,10 +320,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return main
     }
 
-    // MARK: 디버그 훅 (LIVESUB_SNAPSHOT=<png>: 2초마다 창 내용을 저장, LIVESUB_SHOW_SETTINGS=1: 설정 창 자동 열기,
+    // MARK: 디버그 훅 (LIVESUB_SNAPSHOT=<png>: 2초마다 창 내용을 저장, LIVESUB_SHOW_SETTINGS=1: 설정 창 자동 열기, LIVESUB_AUTOQUIT=<초>: 자동 종료,
     //                  LIVESUB_SETTINGS_TAB=engine|subtitle|recording|resources|metrics|about: 설정 창 초기 탭)
 
     private func installDebugHooks() {
+        // LIVESUB_AUTOQUIT=<초>: 테스트용 — 그 시간 뒤 정상 종료 (세션 파일 마무리 포함)
+        if let q = ProcessInfo.processInfo.environment["LIVESUB_AUTOQUIT"], let secs = Double(q) {
+            Timer.scheduledTimer(withTimeInterval: secs, repeats: false) { _ in
+                DispatchQueue.main.async { NSApp.terminate(nil) }
+            }
+        }
         guard let path = ProcessInfo.processInfo.environment["LIVESUB_SNAPSHOT"] else { return }
         if ProcessInfo.processInfo.environment["LIVESUB_SHOW_SETTINGS"] != nil { showSettings(nil) }
         if ProcessInfo.processInfo.environment["LIVESUB_SHOW_SESSIONS"] != nil { showSessions(nil) }

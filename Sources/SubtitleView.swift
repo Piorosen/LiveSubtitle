@@ -19,20 +19,20 @@ struct SubtitleView: View {
 
             VStack(spacing: 8) {
                 Spacer(minLength: 0)
-                if model.showPrevious, !model.previousKorean.isEmpty {
-                    Text(model.previousKorean)
+                if model.showPrevious, !model.previousTarget.isEmpty {
+                    Text(model.previousTarget)
                         .font(.system(size: model.fontSize * 0.68, weight: .medium))
                         .foregroundStyle(.white.opacity(0.42))
                         .lineLimit(2)
                 }
-                Text(model.currentKorean.isEmpty ? (model.isListening ? "듣는 중…" : model.status) : model.currentKorean)
+                Text(model.currentTarget.isEmpty ? (model.isListening ? "듣는 중…" : model.status) : model.currentTarget)
                     .font(.system(size: model.fontSize, weight: .semibold))
-                    .foregroundStyle(model.currentKorean.isEmpty ? .white.opacity(0.35) : .white)
+                    .foregroundStyle(model.currentTarget.isEmpty ? .white.opacity(0.35) : .white)
                     .shadow(color: .black.opacity(0.9), radius: 3, x: 0, y: 1)
                     .lineLimit(3)
-                    .animation(.easeOut(duration: 0.12), value: model.currentKorean)
-                if model.showEnglish, !model.currentEnglish.isEmpty {
-                    Text(model.currentEnglish)
+                    .animation(.easeOut(duration: 0.12), value: model.currentTarget)
+                if model.showSource, model.needsTranslation, !model.currentSource.isEmpty {
+                    Text(model.currentSource)
                         .font(.system(size: model.fontSize * 0.48))
                         .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4).opacity(0.9))
                         .lineLimit(2)
@@ -63,6 +63,7 @@ struct SubtitleView: View {
                 Text("· 번역 준비 안 됨").font(.system(size: 11)).foregroundStyle(.orange)
             }
             Spacer()
+            languagePill
             modePill
             pill("list.bullet.rectangle", "세션 보기 — 저장된 세션의 자막·그래프·재생 (⌘L)") { (NSApp.delegate as? AppDelegate)?.showSessions(nil) }
             pill(model.paused ? "play.fill" : "pause.fill", model.paused ? "재개" : "일시정지") { model.togglePause() }
@@ -72,6 +73,17 @@ struct SubtitleView: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(Color.black.opacity(0.7), in: Capsule())
         .padding(8)
+    }
+
+    /// 언어 쌍 (EN → KO). 클릭하면 설정 > 엔진의 언어 항목
+    private var languagePill: some View {
+        Button { (NSApp.delegate as? AppDelegate)?.showSettings(nil) } label: {
+            Text(model.languagePair).font(.system(size: 11, weight: .medium)).foregroundStyle(.white)
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Color.white.opacity(0.12), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("말하는 언어 → 자막 언어: \(AppLanguage.named(model.sourceLanguage).name) → \(AppLanguage.named(model.targetLanguage).name). 클릭하면 설정에서 바꿀 수 있습니다 (메뉴바 > 언어에서도 가능)")
     }
 
     /// 세션 모드 표시/전환: 기본 모드에서는 "세션 시작", 세션 모드에서는 빨간 녹음 시간 + 문장 수

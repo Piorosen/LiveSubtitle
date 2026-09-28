@@ -48,13 +48,14 @@ final class SessionStore: ObservableObject {
 
     func reload(recorder: SessionRecorder) {
         var roots = [recorder.sessionsRoot]
-        if let ic = SessionRecorder.iCloudDriveRoot { roots.append(ic.appendingPathComponent("LiveSubtitle/Sessions", isDirectory: true)) }
-        roots.append(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/LiveSubtitle/Sessions", isDirectory: true))
-        roots.append(SessionRecorder.legacyRoot)
+        if let ic = SessionRecorder.iCloudSessions { roots.append(ic) }
+        roots.append(SessionRecorder.documentsSessions)
+        if let c = recorder.customSessions { roots.append(c) }
+        if let legacy = SessionRecorder.legacyRoot { roots.append(legacy) }
         var seen = Set<String>()
-        self.roots = roots.filter { seen.insert($0.path).inserted }
+        self.roots = roots.filter { seen.insert($0.standardizedFileURL.path).inserted }
         let liveURL = recorder.isActive ? recorder.sessionURL : nil
-        let icloudPath = SessionRecorder.iCloudDriveRoot?.path
+        let icloudPath = Storage.iCloudRoot?.standardizedFileURL.path
         let found = self.roots.flatMap { Self.scan($0, liveURL: liveURL, icloudPath: icloudPath) }
         sessions = found.sorted { $0.startedAt > $1.startedAt }
     }
@@ -63,7 +64,7 @@ final class SessionStore: ObservableObject {
         guard let items = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return [] }
         return items.compactMap { dir in
             guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return nil }
-            let inICloud = icloudPath.map { dir.path.hasPrefix($0) } ?? false
+            let inICloud = icloudPath.map { dir.standardizedFileURL.path.hasPrefix($0) } ?? false
             let live = liveURL.map { $0.standardizedFileURL.path == dir.standardizedFileURL.path } ?? false
             if let s = loadManifest(dir, inICloud: inICloud, live: live) { return s }
             return loadLegacy(dir, inICloud: inICloud)
@@ -125,13 +126,14 @@ final class SessionStore: ObservableObject {
                     if p.count == 2 { off = p[0] * 60 + p[1] } else if p.count == 3 { off = p[0] * 3600 + p[1] * 60 + p[2] }
                 }
                 pendingKO = (at, off, ko)
-            } else if l.hasPrefix("EN: "), let (at, off, ko) = pendingKO {
-                let en = String(l.dropFirst(4))
+            } else if let (at, off, ko) = pendingKO, let colon = l.firstIndex(of: ":"), l.distance(from: l.startIndex, to: colon) <= 7,
+                      l[..<colon].allSatisfy({ $0.isUppercase || $0 == "-" }), l[l.index(after: colon)...].hasPrefix(" ") {
+                let en = String(l[l.index(colon, offsetBy: 2)...])
                 let words = en.split(separator: " ").count
                 let prevEnd = lines.last?.endedAt ?? at.addingTimeInterval(-4)
                 lines.append(TranscriptLine(id: UUID(), index: lines.count, startedAt: prevEnd, endedAt: at, audioFile: "audio.m4a",
                                             audioStart: max(0, off - at.timeIntervalSince(prevEnd)), audioEnd: off,
-                                            english: en, korean: ko == "(번역 대기)" ? "" : ko, words: words))
+                                            source: en, target: ko == "(번역 대기)" ? "" : ko, words: words))
                 pendingKO = nil
             }
         }
@@ -393,10 +395,10 @@ struct SessionBrowserView: View {
 
     private func transcriptList(_ d: SessionDetail) -> some View {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let rows = q.isEmpty ? d.segments : d.segments.filter { $0.english.lowercased().contains(q) || $0.korean.lowercased().contains(q) }
+        let rows = q.isEmpty ? d.segments : d.segments.filter { $0.source.lowercased().contains(q) || $0.target.lowercased().contains(q) }
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                TextField("자막 검색 (영어·한국어)", text: $query).textFieldStyle(.roundedBorder).frame(maxWidth: 320)
+                TextField("자막 검색 (원문·번역)", text: $query).textFieldStyle(.roundedBorder).frame(maxWidth: 320)
                 Text("\(rows.count)개 문장").font(.caption).foregroundStyle(.secondary)
                 Spacer()
             }
@@ -411,8 +413,8 @@ struct SessionBrowserView: View {
                                 }
                                 .frame(width: 64, alignment: .trailing)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(l.korean.isEmpty ? "(번역 없음)" : l.korean).font(.body)
-                                    Text(l.english).font(.callout).foregroundStyle(.secondary)
+                                    Text(l.target.isEmpty ? "(번역 없음)" : l.target).font(.body)
+                                    Text(l.source).font(.callout).foregroundStyle(.secondary)
                                     let ph = d.photos.filter { $0.segmentIndex == l.index }
                                     if !ph.isEmpty {
                                         HStack(spacing: 6) {
@@ -537,7 +539,7 @@ struct SessionBrowserView: View {
                                 Text("슬라이드 \(k + 1) · 문장 \(g.segments.count)개" + (g.segments.first.map { " · \(SessionRecorder.timeOnly.string(from: $0.endedAt))~" } ?? ""))
                                     .font(.caption.bold()).foregroundStyle(.secondary)
                                 ForEach(g.segments) { l in
-                                    Text(l.korean.isEmpty ? l.english : l.korean).font(.callout)
+                                    Text(l.target.isEmpty ? l.source : l.target).font(.callout)
                                 }
                                 if g.segments.isEmpty { Text("(이 사진 뒤에 확정된 문장 없음)").font(.caption).foregroundStyle(.secondary) }
                             }

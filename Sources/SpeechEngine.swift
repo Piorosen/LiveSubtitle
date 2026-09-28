@@ -9,8 +9,12 @@ final class SpeechEngine {
     var onStatus: ((String, Bool) -> Void)?   // (메시지, 듣는 중 여부)
     var onAudio: ((AVAudioPCMBuffer) -> Void)?     // 마이크 원본 버퍼 (세션 녹음용, 탭 스레드에서 호출)
 
-    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private let recognizer: SFSpeechRecognizer?
     private let engine = AVAudioEngine()
+
+    init(locale: Locale = Locale(identifier: "en-US")) {
+        recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    }
     private let q = DispatchQueue(label: "speech.engine")
 
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -71,7 +75,7 @@ final class SpeechEngine {
 
     private func startEngine() {
         guard let recognizer, recognizer.isAvailable else {
-            status("영어 음성 인식을 사용할 수 없습니다", false)
+            status("이 언어의 음성 인식을 사용할 수 없습니다", false)
             return
         }
         onDevice = recognizer.supportsOnDeviceRecognition
