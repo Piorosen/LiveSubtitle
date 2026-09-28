@@ -202,7 +202,7 @@ struct SessionTab: View {
                     Spacer()
                     Button("Finder에서 열기") { recorder.revealSessionFolder() }
                 }
-                Text("위치를 바꾸면 다음 세션부터 적용됩니다. iCloud Drive에 두면 iPhone·iPad·다른 맥의 파일 앱에서도 보입니다 (음성·텍스트가 이 맥 밖으로 나갑니다).")
+                Text("위치를 바꾸면 다음 세션부터 적용됩니다. iCloud Drive에 두면 iPhone·iPad·다른 맥의 파일 앱에서도 보입니다 (음성·텍스트가 이 맥 밖으로 나갑니다). 앱은 샌드박스 안에서 실행되므로 앱 폴더·iCloud 컨테이너·직접 고른 폴더 외에는 접근하지 않습니다.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -259,7 +259,7 @@ struct ResourceTab: View {
                 LabeledContent("CPU 사용률", value: String(format: "%.1f %%  (코어 1개 = 100%%)", resources.processCPU))
                 LabeledContent("메모리", value: String(format: "%.0f MB", resources.memoryMB))
                 LabeledContent("스레드", value: "\(resources.threads)개")
-                LabeledContent("음성 인식 모델 캐시", value: String(format: "%.0f MB  (%@)", resources.modelCacheMB, Storage.sandboxed ? "앱 컨테이너의 Application Support/FluidAudio/Models" : "~/Library/Application Support/FluidAudio/Models"))
+                LabeledContent("음성 인식 모델 캐시", value: String(format: "%.0f MB  (앱 컨테이너의 Application Support/FluidAudio/Models)", resources.modelCacheMB))
                 Text("Neural Engine 사용량은 macOS가 앱에 제공하지 않습니다. 엔진별 실측 전력은 엔진 탭의 표, 시간에 따른 변화는 메트릭 탭을 참고하세요.")
                     .font(.caption).foregroundStyle(.secondary)
             }

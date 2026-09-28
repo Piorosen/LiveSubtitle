@@ -2,10 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Developer ID 배포용 하드닝 런타임 entitlements -->
-    <key>com.apple.security.device.audio-input</key> <true/>
-    <key>com.apple.security.cs.disable-library-validation</key> <false/>
-    <!-- 세션 보기 > 사진 가져오기 (PhotoKit 읽기) -->
-    <key>com.apple.security.personal-information.photos-library</key> <true/>
+    <!-- 모든 빌드(로컬 ad-hoc, GitHub Release Developer ID)에 적용되는 App Sandbox entitlements.
+         iCloud 컨테이너까지 포함한 App Store 빌드는 LiveSubtitle.appstore.entitlements (build-appstore.sh) -->
+    <key>com.apple.security.app-sandbox</key>                        <true/>
+    <key>com.apple.security.network.client</key>                     <true/>   <!-- Parakeet 모델 다운로드 (HuggingFace) -->
+    <key>com.apple.security.device.audio-input</key>                 <true/>   <!-- 마이크 -->
+    <key>com.apple.security.files.user-selected.read-write</key>     <true/>   <!-- 저장 폴더 선택, pptx/CSV 저장 -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>          <true/>   <!-- 고른 폴더를 다음 실행에도 사용 -->
+    <key>com.apple.security.personal-information.photos-library</key> <true/>  <!-- 사진 가져오기 -->
 </dict>
 </plist>

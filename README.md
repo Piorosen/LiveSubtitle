@@ -54,7 +54,7 @@ Xcode 26 이상이 필요합니다.
 자막 창의 **세션 시작** pill, 메뉴바, 또는 `⌘R`로 켭니다. 켜져 있는 동안 아래 구조로 계속 저장하고(10초마다 전사·메타데이터 갱신), 세션 종료·앱 종료 시 마무리합니다. 모드는 다음 실행 때도 유지되어 앱을 다시 켜면 새 세션이 바로 시작됩니다 (자막 창에 빨간 ● 표시).
 
 ```
-iCloud Drive/LiveSubtitle/Sessions/2026-09-29 09-15-02/     (기본 위치, 없으면 ~/Documents/LiveSubtitle/Sessions)
+iCloud Drive/LiveSubtitle/Sessions/2026-09-29 09-15-02/     (App Store 빌드의 기본 위치. 그 외 빌드는 앱 폴더 또는 직접 고른 폴더)
 ├── session.json        시각(시간대 포함)·엔진·추정 인식 지연·녹음 파트 목록(절대 시작 시각·길이)·문장/단어 수
 ├── transcript.json     문장마다 startedAt / endedAt(절대 시각) + 녹음 파트·위치(초) + source(원문)·target(번역)·단어 수
 ├── transcript.md       사람이 읽는 전사
@@ -76,7 +76,7 @@ iCloud Drive/LiveSubtitle/Sessions/2026-09-29 09-15-02/     (기본 위치, 없�
 - 마이크가 연설자와 가까울수록 정확합니다. 노트북 마이크는 앞쪽 좌석에서 잘 됩니다.
 - 툴바 상태에 현재 엔진이 표시됩니다. Parakeet 로드에 실패하면 Apple SpeechAnalyzer로, 그것도 안 되면 구형 SFSpeechRecognizer(받아쓰기 설정 필요)로 자동 폴백합니다.
 - 환경변수 `LIVESUB_ENGINE=apple|parakeetV2|parakeetUltra` 로 엔진을 강제할 수 있고, `LIVESUB_RECORD=<wav>` 로 마이크 입력을 녹음할 수 있습니다(평가용).
-- 문제가 생기면 `~/Library/Logs/LiveSubtitle.log` 에 인식/번역 결과와 오류가 기록됩니다.
+- 문제가 생기면 `~/Library/Containers/party.udon.livesubtitle/Data/Library/Logs/LiveSubtitle.log` 에 인식/번역 결과와 오류가 기록됩니다 (설정 > 리소스 > 로그 열기).
 - 디버그: `open --env LIVESUB_SNAPSHOT=/tmp/snap.png build/LiveSubtitle.app` 으로 실행하면 2초마다 창 내용을 PNG로 저장합니다. `LIVESUB_SHOW_SETTINGS=1`로 설정 창을, `LIVESUB_SHOW_SESSIONS=1`로 세션 창을 자동으로 열고, `LIVESUB_SETTINGS_TAB=engine|subtitle|session|resources|metrics|about`로 설정 창의 처음 탭을 고릅니다.
 
 ## 구조
@@ -105,23 +105,22 @@ iCloud Drive/LiveSubtitle/Sessions/2026-09-29 09-15-02/     (기본 위치, 없�
 
 ## App Sandbox · Mac App Store
 
-앱은 App Sandbox 안에서도 동작하도록 만들어져 있습니다 (홈 폴더 직접 접근 없음, 외부 프로세스 없음).
+앱은 **항상 App Sandbox 안에서** 실행됩니다. `./build.sh`가 `LiveSubtitle.entitlements`(샌드박스·네트워크·마이크·파일 선택·북마크·사진)로 서명하며, 비샌드박스 빌드는 없습니다.
 
-- 저장 위치: 샌드박스에서는 iCloud 컨테이너(`iCloud Drive/LiveSubtitle`, App Store 빌드), 앱 컨테이너의 Documents, 또는 사용자가 고른 폴더(보안 북마크로 다음 실행에도 유지) 중 하나. 비샌드박스 빌드(`./build.sh`, GitHub Release DMG)는 지금처럼 iCloud Drive 폴더에 직접 씁니다.
-- pptx 는 앱 안의 zip 생성기(`Sources/ZipWriter.swift`)로 만들며 `/usr/bin/zip` 을 쓰지 않습니다. 로그·모델 캐시는 컨테이너 안 Library 로 갑니다.
-- entitlements 세 가지: `LiveSubtitle.entitlements`(Developer ID, 비샌드박스), `LiveSubtitle.sandbox.entitlements`(샌드박스 검증용, ad-hoc 서명 가능), `LiveSubtitle.appstore.entitlements`(샌드박스 + iCloud 컨테이너, TEAM_ID 치환).
+- 저장 위치는 세 가지뿐입니다: **iCloud 컨테이너**(`iCloud Drive/LiveSubtitle`, iCloud 컨테이너 entitlement가 있는 App Store 빌드에서만), **앱 폴더**(컨테이너의 Documents, Finder에서 열기로 접근), **직접 고른 폴더**(보안 북마크로 다음 실행에도 유지). 고른 폴더는 그 자체가 LiveSubtitle 루트이고 안에 `Sessions/`가 생깁니다. 이전 버전이 만든 `iCloud Drive/LiveSubtitle` 폴더를 고르면 예전 세션(이전 형식 포함)이 그대로 보입니다.
+- 홈 폴더·iCloud Drive를 직접 읽지 않고, 외부 프로세스를 띄우지 않습니다. pptx는 앱 안의 zip 생성기(`Sources/ZipWriter.swift`)로 만들고, 로그·모델 캐시는 컨테이너의 Library 아래(`~/Library/Containers/party.udon.livesubtitle/Data/Library/`)에 있습니다.
+- App Store 제출: `LiveSubtitle.appstore.entitlements`(샌드박스 + iCloud 컨테이너, TEAM_ID 치환)로 서명한 `.pkg`를 만듭니다.
 
 ```zsh
-SANDBOX=1 ./build.sh          # build/LiveSubtitle-sandbox.app — 샌드박스 동작 검증 (iCloud 컨테이너 제외)
 TEAM_ID=ABCDE12345 PROFILE=~/Downloads/LiveSubtitle_AppStore.provisionprofile VERSION=1.2.0 ./build-appstore.sh
-                              # dist/LiveSubtitle-1.2.0.pkg — Transporter 로 App Store Connect 에 업로드
+# → dist/LiveSubtitle-1.2.0.pkg  (Transporter 로 App Store Connect 에 업로드)
 ```
 
-App Store 제출에 필요한 것: Apple Developer Program, App ID `party.udon.livesubtitle` 에 iCloud(CloudDocuments, 컨테이너 `iCloud.party.udon.livesubtitle`) 기능, "3rd Party Mac Developer Application / Installer" 인증서, Mac App Store 프로비저닝 프로파일, App Store Connect 앱 등록(스크린샷, 개인정보 처리방침 URL — 음성·텍스트는 기기 밖으로 나가지 않음). `Info.plist` 에는 `LSApplicationCategoryType`, `ITSAppUsesNonExemptEncryption`, `NSUbiquitousContainers` 가 들어 있습니다.
+필요한 것: Apple Developer Program, App ID `party.udon.livesubtitle`에 iCloud(CloudDocuments, 컨테이너 `iCloud.party.udon.livesubtitle`) 기능, "3rd Party Mac Developer Application / Installer" 인증서, Mac App Store 프로비저닝 프로파일, App Store Connect 앱 등록(스크린샷, 개인정보 처리방침 URL — 음성·텍스트는 기기 밖으로 나가지 않음). `Info.plist`에는 `LSApplicationCategoryType`, `ITSAppUsesNonExemptEncryption`, `NSUbiquitousContainers`가 들어 있습니다.
 
 ## 배포 자동화 (GitHub Actions)
 
-- `ci.yml`: main 푸시·PR 때 macOS 러너에서 빌드하고 `.app`을 아티팩트로 올립니다.
+- `ci.yml`: main 푸시·PR 때 macOS 러너에서 빌드하고 `.app`을 아티팩트로 올립니다 (샌드박스 entitlements로 서명).
 - `release.yml`: `v1.2.3` 형태의 태그를 푸시하면 버전을 Info.plist에 기록해 빌드하고, zip·DMG·SHA256을 만들어 GitHub Release를 생성합니다.
   - 저장소 secrets에 `MACOS_CERT_P12_BASE64`, `MACOS_CERT_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`를 넣으면 Developer ID 서명과 공증까지 자동으로 수행합니다. 없으면 ad-hoc 서명 빌드를 올립니다.
 

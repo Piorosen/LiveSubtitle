@@ -23,17 +23,17 @@ enum SaveLocation: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .iCloud: return "iCloud Drive  (iCloud Drive/LiveSubtitle/Sessions — 다른 기기와 동기화)"
-        case .documents: return Storage.sandboxed ? "앱 폴더  (이 맥에만, Finder에서 열기로 접근)" : "이 맥  (~/Documents/LiveSubtitle/Sessions)"
-        case .custom: return "직접 선택한 폴더"
+        case .documents: return "앱 폴더  (이 맥에만, Finder에서 열기로 접근)"
+        case .custom: return "직접 선택한 폴더  (예: 기존 iCloud Drive/LiveSubtitle 폴더)"
         }
     }
 }
 
-/// 저장 경로 해석. App Sandbox 안에서는 홈 폴더 대신 컨테이너·iCloud 컨테이너·사용자가 고른 폴더(보안 북마크)만 쓸 수 있다.
+/// 저장 경로 해석. 앱은 항상 App Sandbox 안에서 실행되므로 홈 폴더 대신 컨테이너·iCloud 컨테이너·사용자가 고른 폴더(보안 북마크)만 쓴다.
 enum Storage {
-    static let sandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+    static let sandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil   // 진단용 (빌드는 항상 샌드박스)
 
-    /// 앱 기본 폴더: 비샌드박스 = ~/Documents, 샌드박스 = 컨테이너의 Documents
+    /// 앱 기본 폴더: 컨테이너의 Documents
     static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
@@ -54,24 +54,9 @@ enum Storage {
         DispatchQueue.global(qos: .userInitiated).async { _ = ubiquityDocuments() }
     }
 
-    /// iCloud Drive 직접 경로 (비샌드박스 빌드에서만 접근 가능)
-    static var directCloudDocs: URL? {
-        guard !sandboxed else { return nil }
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
-        var isDir: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue ? url : nil
-    }
-
-    /// Finder의 "iCloud Drive/LiveSubtitle" 에 해당하는 폴더. 없으면 nil (iCloud 꺼짐, 또는 샌드박스인데 컨테이너 권한 없음)
-    static var iCloudRoot: URL? {
-        if let u = ubiquityDocuments() { return u }
-        if let d = directCloudDocs { return d.appendingPathComponent("LiveSubtitle", isDirectory: true) }
-        return nil
-    }
-    static var iCloudUnavailableReason: String {
-        sandboxed ? "이 빌드에는 iCloud 컨테이너 권한이 없습니다 (App Store 빌드에서만 제공). 앱 폴더에 저장합니다."
-                  : "이 맥에 iCloud Drive가 꺼져 있어 ~/Documents 에 저장합니다. 시스템 설정 > Apple 계정 > iCloud > iCloud Drive 를 켜세요."
-    }
+    /// Finder의 "iCloud Drive/LiveSubtitle" 에 해당하는 폴더 (iCloud 컨테이너). 없으면 nil (컨테이너 entitlement 없는 빌드, 또는 iCloud 꺼짐)
+    static var iCloudRoot: URL? { ubiquityDocuments() }
+    static let iCloudUnavailableReason = "이 빌드에는 iCloud 컨테이너 권한이 없어(App Store 빌드에서만 제공) 앱 폴더에 저장합니다. 기존 iCloud Drive/LiveSubtitle 폴더를 계속 쓰려면 '직접 선택한 폴더'에서 그 폴더를 고르세요."
 }
 
 /// 확정된 문장 하나. 절대 시각(startedAt/endedAt)과 녹음 파트 안의 위치를 함께 가진다 — 나중에 Photos 촬영 시각과 매칭하기 위한 핵심 데이터.
@@ -188,23 +173,19 @@ final class SessionRecorder: ObservableObject {
     var wordCount: Int { lines.reduce(0) { $0 + $1.words } }
     var usingICloud: Bool { location == .iCloud && Storage.iCloudRoot != nil }
 
-    /// 현재 설정의 세션 폴더 (…/Sessions)
+    /// 현재 설정의 세션 폴더 (…/Sessions). 직접 고른 폴더는 그 자체가 LiveSubtitle 루트(안에 Sessions/)로 본다 — 기존 iCloud Drive/LiveSubtitle 폴더를 고르면 그대로 이어짐.
     var sessionsRoot: URL {
         switch location {
         case .iCloud: return (Storage.iCloudRoot ?? Storage.documents.appendingPathComponent("LiveSubtitle", isDirectory: true)).appendingPathComponent("Sessions", isDirectory: true)
         case .documents: return Self.documentsSessions
-        case .custom: return (customURL ?? (customPath.isEmpty ? nil : URL(fileURLWithPath: customPath, isDirectory: true)))
-                .map { $0.appendingPathComponent("LiveSubtitle/Sessions", isDirectory: true) } ?? Self.documentsSessions
+        case .custom: return customURL.map { $0.appendingPathComponent("Sessions", isDirectory: true) } ?? Self.documentsSessions
         }
     }
     static var documentsSessions: URL { Storage.documents.appendingPathComponent("LiveSubtitle/Sessions", isDirectory: true) }
     static var iCloudSessions: URL? { Storage.iCloudRoot?.appendingPathComponent("Sessions", isDirectory: true) }
-    var customSessions: URL? { customURL.map { $0.appendingPathComponent("LiveSubtitle/Sessions", isDirectory: true) } }
-
-    /// 이전 형식(폴더 바로 아래 transcript.md)이 저장되던 곳 — 비샌드박스에서만 함께 읽음
-    static var legacyRoot: URL? {
-        Storage.sandboxed ? nil : FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/LiveSubtitle", isDirectory: true)
-    }
+    var customSessions: URL? { customURL.map { $0.appendingPathComponent("Sessions", isDirectory: true) } }
+    /// 직접 고른 폴더 자체 — 이전 형식 세션(폴더 바로 아래 transcript.md)도 여기서 읽음
+    var customRoot: URL? { customURL }
 
     init() {
         Storage.prefetchUbiquity()
@@ -484,8 +465,8 @@ final class SessionRecorder: ObservableObject {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "이 폴더에 저장"
-        panel.message = "세션 폴더(녹음·전사·메트릭)를 저장할 위치"
+        panel.prompt = "이 폴더 사용"
+        panel.message = "세션을 저장할 LiveSubtitle 루트 폴더 (안에 Sessions/ 가 만들어짐). 기존 iCloud Drive/LiveSubtitle 폴더를 고르면 이전 세션도 함께 보입니다."
         if !customPath.isEmpty { panel.directoryURL = URL(fileURLWithPath: customPath) }
         NSApp.activate(ignoringOtherApps: true)
         if panel.runModal() == .OK, let url = panel.url {

@@ -51,7 +51,7 @@ final class SessionStore: ObservableObject {
         if let ic = SessionRecorder.iCloudSessions { roots.append(ic) }
         roots.append(SessionRecorder.documentsSessions)
         if let c = recorder.customSessions { roots.append(c) }
-        if let legacy = SessionRecorder.legacyRoot { roots.append(legacy) }
+        if let c = recorder.customRoot { roots.append(c) }          // 이전 형식(폴더 바로 아래 transcript.md)
         var seen = Set<String>()
         self.roots = roots.filter { seen.insert($0.standardizedFileURL.path).inserted }
         let liveURL = recorder.isActive ? recorder.sessionURL : nil
