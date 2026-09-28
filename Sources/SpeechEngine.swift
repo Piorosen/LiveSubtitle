@@ -7,6 +7,7 @@ final class SpeechEngine {
     var onPartial: ((String) -> Void)?
     var onFinal: ((String) -> Void)?
     var onStatus: ((String, Bool) -> Void)?   // (메시지, 듣는 중 여부)
+    var onAudio: ((AVAudioPCMBuffer) -> Void)?     // 마이크 원본 버퍼 (세션 녹음용, 탭 스레드에서 호출)
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private let engine = AVAudioEngine()
@@ -81,6 +82,7 @@ final class SpeechEngine {
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
             guard let self else { return }
+            self.onAudio?(buffer)
             self.q.async { self.request?.append(buffer) }
         }
         engine.prepare()

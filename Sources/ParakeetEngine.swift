@@ -8,11 +8,11 @@ final class ParakeetEngine {
     var onPartial: ((String) -> Void)?
     var onFinal: ((String) -> Void)?
     var onStatus: ((String, Bool) -> Void)?
+    var onAudio: ((AVAudioPCMBuffer) -> Void)?     // 마이크 원본 버퍼 (세션 녹음용, 탭 스레드에서 호출)
 
     private let engine = AVAudioEngine()
     private var manager: SlidingWindowAsrManager?
     private var updatesTask: Task<Void, Never>?
-    private var recordFile: AVAudioFile?
     private let version: AsrModelVersion
     private let window: (Double, Double, Double)   // (chunk, left, right) 초
 
@@ -78,18 +78,13 @@ final class ParakeetEngine {
         let input = engine.inputNode
         let inFmt = input.outputFormat(forBus: 0)
         FileLog.write("input format: \(inFmt)")
-        if let path = ProcessInfo.processInfo.environment["LIVESUB_RECORD"] {
-            recordFile = try? AVAudioFile(forWriting: URL(fileURLWithPath: path), settings: inFmt.settings,
-                                          commonFormat: inFmt.commonFormat, interleaved: inFmt.isInterleaved)
-            FileLog.write("recording to \(path): \(recordFile != nil)")
-        }
 
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 4096, format: inFmt) { [weak self] buffer, _ in
             guard let self else { return }
-            if let f = self.recordFile { try? f.write(from: buffer) }
+            self.onAudio?(buffer)
             // 탭 버퍼는 콜백 이후 재사용될 수 있으므로 복사해서 넘김
-            guard let copy = Self.copy(buffer) else { return }
+            guard let copy = buffer.deepCopy() else { return }
             Task { await mgr.streamAudio(copy) }
         }
         engine.prepare()
@@ -98,27 +93,12 @@ final class ParakeetEngine {
         FileLog.write("parakeet engine started")
     }
 
-    private static func copy(_ b: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        guard let c = AVAudioPCMBuffer(pcmFormat: b.format, frameCapacity: b.frameLength) else { return nil }
-        c.frameLength = b.frameLength
-        let ch = Int(b.format.channelCount)
-        let n = Int(b.frameLength)
-        if let src = b.floatChannelData, let dst = c.floatChannelData {
-            for i in 0..<ch { dst[i].update(from: src[i], count: n) }
-        } else if let src = b.int16ChannelData, let dst = c.int16ChannelData {
-            for i in 0..<ch { dst[i].update(from: src[i], count: n) }
-        } else if let src = b.int32ChannelData, let dst = c.int32ChannelData {
-            for i in 0..<ch { dst[i].update(from: src[i], count: n) }
-        } else { return nil }
-        return c
-    }
 
     func stop() {
         if engine.isRunning {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
         }
-        recordFile = nil
         updatesTask?.cancel()
         updatesTask = nil
         let m = manager

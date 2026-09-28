@@ -10,6 +10,7 @@ final class AnalyzerEngine {
     var onPartial: ((String) -> Void)?
     var onFinal: ((String) -> Void)?
     var onStatus: ((String, Bool) -> Void)?
+    var onAudio: ((AVAudioPCMBuffer) -> Void)?     // 마이크 원본 버퍼 (세션 녹음용, 탭 스레드에서 호출)
 
     private let engine = AVAudioEngine()
     private var analyzer: SpeechAnalyzer?
@@ -18,7 +19,6 @@ final class AnalyzerEngine {
     private var resultsTask: Task<Void, Never>?
     private var converter: AVAudioConverter?
     private var analyzerFormat: AVAudioFormat?
-    private var recordFile: AVAudioFile?          // LIVESUB_RECORD=<wav 경로> 로 실행 시 마이크 입력을 저장 (평가용)
 
     enum EngineError: Error, LocalizedError {
         case unsupportedLocale, noAudioFormat, converter
@@ -107,16 +107,10 @@ final class AnalyzerEngine {
         guard let conv = AVAudioConverter(from: inFmt, to: fmt) else { throw EngineError.converter }
         converter = conv
 
-        if let path = ProcessInfo.processInfo.environment["LIVESUB_RECORD"] {
-            recordFile = try? AVAudioFile(forWriting: URL(fileURLWithPath: path), settings: inFmt.settings,
-                                          commonFormat: inFmt.commonFormat, interleaved: inFmt.isInterleaved)
-            FileLog.write("recording to \(path): \(recordFile != nil)")
-        }
-
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 4096, format: inFmt) { [weak self] buffer, _ in
             guard let self else { return }
-            if let f = self.recordFile { try? f.write(from: buffer) }
+            self.onAudio?(buffer)
             guard let out = self.convert(buffer) else { return }
             self.inputBuilder?.yield(AnalyzerInput(buffer: out))
         }
@@ -151,7 +145,6 @@ final class AnalyzerEngine {
         }
         inputBuilder?.finish()
         inputBuilder = nil
-        recordFile = nil
         let a = analyzer
         Task { await a?.cancelAndFinishNow() }
         resultsTask?.cancel()

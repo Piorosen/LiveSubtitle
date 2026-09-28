@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Translation
 import FluidAudio
+import AVFoundation
 
 struct SubtitleLine: Identifiable, Equatable {
     let id: UUID
@@ -53,13 +54,23 @@ final class SubtitleModel: ObservableObject {
         didSet { UserDefaults.standard.set(opacity, forKey: "opacity") }
     }
 
+    /// 확정 문장 하나의 번역 지연 (메트릭 그래프용)
+    struct LatencyPoint: Identifiable {
+        let t: Date
+        let ms: Double
+        var id: Date { t }
+    }
+
     // 세션 통계
     struct SessionStats {
         var start = Date()
         var sentences = 0
+        var words = 0
+        var asrUpdates = 0                    // 음성 인식 결과 수신 횟수 (partial + final)
         var engineRestarts = 0
         var translationMsSum: Double = 0
         var translationCount = 0
+        var latencies: [LatencyPoint] = []    // 최근 2000개
         var avgTranslationMs: Double { translationCount > 0 ? translationMsSum / Double(translationCount) : 0 }
         var elapsedText: String {
             let s = Int(Date().timeIntervalSince(start))
@@ -67,6 +78,9 @@ final class SubtitleModel: ObservableObject {
         }
     }
     @Published var stats = SessionStats()
+
+    /// 세션 모드 저장 (녹음 파트 · 시각 있는 전사 · 메트릭 → 세션 폴더)
+    let recorder = SessionRecorder()
 
     let translationConfig = TranslationSession.Configuration(
         source: Locale.Language(identifier: "en"),
@@ -78,6 +92,7 @@ final class SubtitleModel: ObservableObject {
     private var parakeet: ParakeetEngine?        // Parakeet v2 CoreML — 기본
     private var usingAnalyzer = false
     private var liveID = UUID()
+    private var liveStartedAt: Date?             // 현재 문장의 첫 partial 시각 (전사 시작 시각)
     private(set) var latestPartialSeq = 0
     private var seq = 0
 
@@ -89,13 +104,25 @@ final class SubtitleModel: ObservableObject {
         jobs = AsyncStream(bufferingPolicy: .unbounded) { cont = $0 }
         continuation = cont
 
-        speech.onPartial = { [weak self] text in self?.handlePartial(text) }
-        speech.onFinal = { [weak self] text in self?.handleFinal(text) }
-        speech.onStatus = { [weak self] msg, listening in
-            self?.status = msg
-            self?.isListening = listening
-            FileLog.write("status: \(msg) listening=\(listening)")
-        }
+        bind(&speech.onPartial, &speech.onFinal, &speech.onStatus, &speech.onAudio)
+    }
+
+    /// 세션 파일에 기록할 엔진 이름
+    var engineDescription: String {
+        guard engineChoice.parakeetVersion != nil else { return engineChoice.short }
+        let preset = latencyPreset.title.components(separatedBy: " (").first ?? latencyPreset.rawValue
+        return "\(engineChoice.short) · \(preset)"
+    }
+    /// 발화 → 확정 텍스트 추정 지연(초). Parakeet 슬라이딩 창은 창 + 우측 문맥, Apple은 약 1.5초.
+    var engineLagSeconds: Double {
+        guard engineChoice.parakeetVersion != nil else { return 1.5 }
+        let (chunk, _, right) = latencyPreset.window
+        return chunk + right
+    }
+
+    /// 기본 모드 ↔ 세션 모드
+    func setMode(_ m: AppMode) {
+        recorder.setMode(m, engine: engineDescription, lag: engineLagSeconds, listening: isListening && !paused)
     }
 
     func start() {
@@ -108,6 +135,7 @@ final class SubtitleModel: ObservableObject {
         } else {
             startAppleAnalyzer()
         }
+        recorder.engineStarted(engine: engineDescription, lag: engineLagSeconds)
     }
 
     func selectEngine(_ c: EngineChoice) {
@@ -125,6 +153,7 @@ final class SubtitleModel: ObservableObject {
     }
 
     private func stopCurrentEngine() {
+        recorder.engineStopped()
         if let p = parakeet { p.stop(); parakeet = nil }
         if #available(macOS 26, *), usingAnalyzer, let eng = analyzerEngine as? AnalyzerEngine { eng.stop() }
         usingAnalyzer = false
@@ -135,12 +164,13 @@ final class SubtitleModel: ObservableObject {
     func restartEngine() {
         stats.engineRestarts += 1
         FileLog.write("restart engine → \(engineChoice.rawValue) / \(latencyPreset.rawValue)")
-        stopCurrentEngine()
         if !liveEnglish.isEmpty { handleFinal(liveEnglish) }
+        stopCurrentEngine()
         start()
     }
 
-    private func bind(_ onPartial: inout ((String) -> Void)?, _ onFinal: inout ((String) -> Void)?, _ onStatus: inout ((String, Bool) -> Void)?) {
+    private func bind(_ onPartial: inout ((String) -> Void)?, _ onFinal: inout ((String) -> Void)?,
+                      _ onStatus: inout ((String, Bool) -> Void)?, _ onAudio: inout ((AVAudioPCMBuffer) -> Void)?) {
         onPartial = { [weak self] text in self?.handlePartial(text) }
         onFinal = { [weak self] text in self?.handleFinal(text) }
         onStatus = { [weak self] msg, listening in
@@ -148,11 +178,13 @@ final class SubtitleModel: ObservableObject {
             self?.isListening = listening
             FileLog.write("status: \(msg) listening=\(listening)")
         }
+        let rec = recorder
+        onAudio = { buffer in rec.write(buffer) }     // 오디오 탭 스레드 → 세션 녹음
     }
 
     private func startParakeet(version: AsrModelVersion) {
         let eng = ParakeetEngine(version: version, window: latencyPreset.window)
-        bind(&eng.onPartial, &eng.onFinal, &eng.onStatus)
+        bind(&eng.onPartial, &eng.onFinal, &eng.onStatus, &eng.onAudio)
         parakeet = eng
         status = "Parakeet 모델 준비 중…"
         Task {
@@ -169,7 +201,7 @@ final class SubtitleModel: ObservableObject {
     private func startAppleAnalyzer() {
         if #available(macOS 26, *) {
             let eng = AnalyzerEngine()
-            bind(&eng.onPartial, &eng.onFinal, &eng.onStatus)
+            bind(&eng.onPartial, &eng.onFinal, &eng.onStatus, &eng.onAudio)
             analyzerEngine = eng
             usingAnalyzer = true
             status = "음성 인식 준비 중…"
@@ -193,8 +225,8 @@ final class SubtitleModel: ObservableObject {
             start()
         } else {
             paused = true
-            stopCurrentEngine()
             if !liveEnglish.isEmpty { handleFinal(liveEnglish) }
+            stopCurrentEngine()
         }
     }
 
@@ -242,6 +274,8 @@ final class SubtitleModel: ObservableObject {
     private func handlePartial(_ text: String) {
         guard text != liveEnglish else { return }   // 같은 내용이 반복해서 오면 무시
         FileLog.write("partial: \(text)")
+        stats.asrUpdates += 1
+        if liveStartedAt == nil { liveStartedAt = Date() }
         liveEnglish = text
         seq += 1
         latestPartialSeq = seq
@@ -253,6 +287,10 @@ final class SubtitleModel: ObservableObject {
         let line = SubtitleLine(id: liveID, english: text, korean: liveKorean)
         history.append(line)
         stats.sentences += 1
+        stats.asrUpdates += 1
+        stats.words += text.split(whereSeparator: { $0 == " " || $0 == "\n" }).count
+        recorder.addLine(id: liveID, startedAt: liveStartedAt, english: text, korean: liveKorean)
+        liveStartedAt = nil
         if history.count > 6 { history.removeFirst(history.count - 6) }
         seq += 1
         continuation.yield(.translate(TranslationJob(id: liveID, text: text, seq: seq, isFinal: true)))
@@ -281,8 +319,11 @@ final class SubtitleModel: ObservableObject {
                         let t0 = Date()
                         let response = try await session.translate(job.text)
                         if job.isFinal {
-                            stats.translationMsSum += Date().timeIntervalSince(t0) * 1000
+                            let ms = Date().timeIntervalSince(t0) * 1000
+                            stats.translationMsSum += ms
                             stats.translationCount += 1
+                            stats.latencies.append(LatencyPoint(t: Date(), ms: ms))
+                            if stats.latencies.count > 2000 { stats.latencies.removeFirst(stats.latencies.count - 2000) }
                         }
                         if job.isFinal { FileLog.write("final KO: \(response.targetText)") }
                         else { FileLog.write("partial KO: \(response.targetText)") }
@@ -325,6 +366,7 @@ final class SubtitleModel: ObservableObject {
             if let i = history.firstIndex(where: { $0.id == job.id }) {
                 history[i].korean = korean
             }
+            recorder.updateKorean(id: job.id, korean: korean)
         } else if job.id == liveID {
             liveKorean = korean
         }

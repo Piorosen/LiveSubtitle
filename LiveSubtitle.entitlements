@@ -5,5 +5,7 @@
     <!-- Developer ID 배포용 하드닝 런타임 entitlements -->
     <key>com.apple.security.device.audio-input</key> <true/>
     <key>com.apple.security.cs.disable-library-validation</key> <false/>
+    <!-- 세션 보기 > 사진 가져오기 (PhotoKit 읽기) -->
+    <key>com.apple.security.personal-information.photos-library</key> <true/>
 </dict>
 </plist>

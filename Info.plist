@@ -2,20 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>                <string>LiveSubtitle</string>
-    <key>CFBundleDisplayName</key>         <string>LiveSubtitle</string>
-    <key>CFBundleIdentifier</key>          <string>party.udon.livesubtitle</string>
-    <key>CFBundleExecutable</key>          <string>LiveSubtitle</string>
-    <key>CFBundlePackageType</key>         <string>APPL</string>
-    <key>CFBundleVersion</key>             <string>1</string>
-    <key>CFBundleShortVersionString</key>  <string>1.0</string>
-    <key>LSMinimumSystemVersion</key>      <string>15.0</string>
-    <key>NSHighResolutionCapable</key>     <true/>
-    <key>LSUIElement</key>                 <true/>
-    <key>CFBundleIconFile</key>             <string>LiveSubtitle</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>연설자의 음성을 듣고 실시간 자막을 만들기 위해 마이크가 필요합니다.</string>
-    <key>NSSpeechRecognitionUsageDescription</key>
-    <string>영어 음성을 텍스트로 변환하기 위해 음성 인식이 필요합니다.</string>
+	<key>CFBundleDisplayName</key>
+	<string>LiveSubtitle</string>
+	<key>CFBundleExecutable</key>
+	<string>LiveSubtitle</string>
+	<key>CFBundleIconFile</key>
+	<string>LiveSubtitle</string>
+	<key>CFBundleIdentifier</key>
+	<string>party.udon.livesubtitle</string>
+	<key>CFBundleName</key>
+	<string>LiveSubtitle</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>연설자의 음성을 듣고 실시간 자막을 만들기 위해 마이크가 필요합니다.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>세션 중 촬영한 사진을 촬영 시각으로 자막과 맞추기 위해 사진 보관함 읽기가 필요합니다 (세션 보기 &gt; 사진 가져오기를 누를 때만).</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>영어 음성을 텍스트로 변환하기 위해 음성 인식이 필요합니다.</string>
 </dict>
 </plist>
